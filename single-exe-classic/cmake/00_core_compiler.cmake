@@ -263,8 +263,17 @@ endif()
 set(CXX_USING_CLANG "${CXX_USING_CLANG}" CACHE BOOL "Active toolchain is Clang" FORCE)
 set(CXX_USING_GCC "${CXX_USING_GCC}" CACHE BOOL "Active toolchain is GCC" FORCE)
 
-# 标准库初始 flags：Clang→libc++；GCC→默认 libstdc++（勿强行 -stdlib=libc++）
-if(CXX_USING_CLANG)
+# 标准库初始 flags：macOS Clang→libc++；Linux Clang→系统默认 libstdc++；
+# GCC→默认 libstdc++（勿强行 -stdlib=libc++）。需要 libc++ 时用 -DCXX_FORCE_LIBCXX=ON。
+set(CXX_FORCE_LIBCXX OFF CACHE BOOL "Force libc++ on Clang (Linux modules 场景用)")
+set(_cxx_want_libcxx OFF)
+if(CXX_USING_CLANG AND
+   (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CXX_FORCE_LIBCXX))
+  set(_cxx_want_libcxx ON)
+endif()
+set(CXX_USING_LIBCXX "${_cxx_want_libcxx}" CACHE BOOL "Using libc++" FORCE)
+
+if(_cxx_want_libcxx)
   set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
   if(CXX_LIBCXX_LIBDIR AND CXX_UNWIND_LIBDIR)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
@@ -368,7 +377,7 @@ function(cxx_apply_llvm_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "cxx_apply_llvm_runtime: target '${target}' does not exist")
   endif()
-  if(CXX_USING_CLANG)
+  if(CXX_USING_LIBCXX)
     target_compile_options(${target} PRIVATE -stdlib=libc++)
     target_link_options(${target} PRIVATE -stdlib=libc++)
     if(CXX_LIBCXX_LIBDIR)

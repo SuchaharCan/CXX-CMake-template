@@ -28,12 +28,22 @@ jobs:
       CI_FRESH_BUILD: "1"
       CCACHE_DISABLE: "1"
       CLANG_FORMAT: /usr/local/bin/clang-format
+      CXX_LIBCXX_DEPS_PREFIX: ${{ github.workspace }}/.deps-libcxx
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: bash ci/install-deps-ubuntu.sh
+
+      - name: Cache libc++ dependencies
+        uses: actions/cache@v4
+        with:
+          path: .deps-libcxx
+          key: libcxx-deps-linux-${{ hashFiles('ci/install-libcxx-deps.sh') }}
+
+      - name: Build libc++ dependencies (modules)
+        run: bash ci/install-libcxx-deps.sh
 
       - name: Run template matrix
         shell: bash

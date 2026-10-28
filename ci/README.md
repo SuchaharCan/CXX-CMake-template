@@ -16,6 +16,7 @@
   - `macos`：`macos-26`（GitHub 最新托管 macOS，arm64，Homebrew）
 - `ci/install-deps-ubuntu.sh` — Ubuntu 依赖安装（兼容 GitHub runner 的 sudo）
 - `ci/install-deps-macos.sh` — macOS 依赖安装/升级（cmake≥4.4.4、clang≥23.1 等）
+- `ci/install-libcxx-deps.sh` — Linux modules 专用的 libc++ 第三方依赖（spdlog/fmt/gtest/benchmark）
 - `ci/run-template-matrix.sh` — 模板矩阵执行器
 
 > `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
@@ -76,6 +77,11 @@ runs-on: [self-hosted, macos-27]
 ## 依赖说明
 
 - Ubuntu：cmake≥4.4.4（**Kitware 官方二进制，不使用 Python/pip**）、clang 23.1 + libc++（apt.llvm.org，含运行库）、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen。
+- **C++ 运行时策略**：
+  - `single-exe-classic` 在 Linux 使用系统 **libstdc++**（与 apt 的 spdlog/fmt/gtest/benchmark 一致）；
+  - `single-exe-modules` 需要 libc++（`import std` 使用 libc++ 的 std.cppm），CI 用
+    `ci/install-libcxx-deps.sh` 构建配套的 libc++ 版本依赖；
+  - macOS 两模板都使用 Homebrew libc++ 依赖，无此问题。
 - macOS：Homebrew 安装/升级 cmake≥4.4.4、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、bqlog。
 - `bqlog` 是可选依赖；GitHub macOS Homebrew 若没有该 formula，会 warning 并跳过，不会让流水线失败。
 - BqLog 官方安装方式为 `brew install bqlog`，同时支持 **macOS 与 Linux Homebrew**

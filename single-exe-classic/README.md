@@ -123,6 +123,10 @@ ctest --output-on-failure             # 需 -DCXX_ENABLE_GTEST=ON
 bqlog 官方安装方式：`brew install bqlog`（macOS 与 Linux Homebrew 均可；
 Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可用
 `-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
+
+标准库策略：macOS 使用 libc++；Linux 使用系统默认 libstdc++
+（与 apt 的 spdlog/fmt/gtest/benchmark 一致）。需要 libc++ 时加
+`-DCXX_FORCE_LIBCXX=ON`，并准备 libc++ 版本的第三方依赖。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`mimalloc/jemalloc`、`doxygen`、`clang-doc`（随 llvm）。
 
 ## 4. 质量门禁

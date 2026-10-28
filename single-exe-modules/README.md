@@ -62,6 +62,11 @@ just iwyu       # IWYU + include-cleaner
 bqlog 官方安装方式：`brew install bqlog`（macOS 与 Linux Homebrew 均可；
 Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可用
 `-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
+
+标准库策略：模块依赖 libc++（`import std` 使用 libc++ 的 std.cppm）。
+Linux 上请用 `ci/install-libcxx-deps.sh` 构建配套的
+spdlog/fmt/gtest/benchmark，并设置 `CXX_LIBCXX_DEPS_PREFIX` 指向安装前缀；
+macOS 使用 Homebrew 的 libc++ 版本依赖即可。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`doxygen`、`clang-doc`。
 
 ## 4. 质量门禁

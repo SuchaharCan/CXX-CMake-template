@@ -270,8 +270,17 @@ endif()
 set(CXX_USING_CLANG "${CXX_USING_CLANG}" CACHE BOOL "Active toolchain is Clang" FORCE)
 set(CXX_USING_GCC "${CXX_USING_GCC}" CACHE BOOL "Active toolchain is GCC" FORCE)
 
-# 标准库初始 flags：Clang→libc++；GCC→默认 libstdc++（勿强行 -stdlib=libc++）
-if(CXX_USING_CLANG)
+# 标准库初始 flags：模块模板必须 libc++（import std 使用 libc++ 的 std.cppm）；
+# macOS / Linux 均如此，Linux 的第三方依赖需用同一 libc++ 构建。
+set(CXX_FORCE_LIBCXX ON CACHE BOOL "Force libc++ on Clang (modules require libc++)")
+set(_cxx_want_libcxx OFF)
+if(CXX_USING_CLANG AND
+   (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CXX_FORCE_LIBCXX))
+  set(_cxx_want_libcxx ON)
+endif()
+set(CXX_USING_LIBCXX "${_cxx_want_libcxx}" CACHE BOOL "Using libc++" FORCE)
+
+if(_cxx_want_libcxx)
   set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
   if(CXX_LIBCXX_LIBDIR AND CXX_UNWIND_LIBDIR)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
@@ -343,6 +352,10 @@ if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/.linuxbrew")
     "$ENV{HOME}/.linuxbrew"
     "$ENV{HOME}/.linuxbrew/opt/bqlog")
 endif()
+# CI 用 libc++ 构建的第三方依赖前缀（Linux modules 专用）
+if(DEFINED ENV{CXX_LIBCXX_DEPS_PREFIX} AND EXISTS "$ENV{CXX_LIBCXX_DEPS_PREFIX}")
+  list(PREPEND CMAKE_PREFIX_PATH "$ENV{CXX_LIBCXX_DEPS_PREFIX}")
+endif()
 
 if(APPLE AND CXX_USING_CLANG AND CXX_LLVM_BIN)
   find_program(_CXX_LLVM_AR llvm-ar PATHS "${CXX_LLVM_BIN}" NO_DEFAULT_PATH)
@@ -375,7 +388,7 @@ function(cxx_apply_llvm_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "cxx_apply_llvm_runtime: target '${target}' does not exist")
   endif()
-  if(CXX_USING_CLANG)
+  if(CXX_USING_LIBCXX)
     target_compile_options(${target} PRIVATE -stdlib=libc++)
     target_link_options(${target} PRIVATE -stdlib=libc++)
     if(CXX_LIBCXX_LIBDIR)
