@@ -67,6 +67,10 @@ Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可�
 Linux 上请用 `ci/install-libcxx-deps.sh` 构建配套的
 spdlog/fmt/gtest/benchmark，并设置 `CXX_LIBCXX_DEPS_PREFIX` 指向安装前缀；
 macOS 使用 Homebrew 的 libc++ 版本依赖即可。
+
+工具链策略：模块模板固定 `clang++ + libc++`（Linux 的 GCC 13 不提供本模板
+使用的 libc++ std 模块）；快捷命令 `just build-clang`、`just local-ci`。
+Linux 本地复现：`CI_LOCAL_BUILD_DEPS=1 just local-ci`。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`doxygen`、`clang-doc`。
 
 ## 4. 质量门禁

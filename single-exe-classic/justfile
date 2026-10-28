@@ -9,11 +9,15 @@ set shell := ["bash", "-cu"]
 
 # ---- 必选系统环境变量（所有 recipe 生效，可用环境变量覆盖）----
 set export
-CXX_PREFERRED_COMPILER := env_var_or_default("CXX_PREFERRED_COMPILER", "clang++")
+CXX_PREFERRED_COMPILER := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
+CXX_STDLIB := env_var_or_default("CXX_STDLIB", "auto")
 CXX_BQLOG_MODE := env_var_or_default("CXX_BQLOG_MODE", "header")
 CLICOLOR_FORCE := "1"
 CXX_BUILD_COLOR_FORCE := "1"
 clang_format := env_var_or_default("CLANG_FORMAT", "clang-format")
+cxx_compiler := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
+cxx_stdlib := env_var_or_default("CXX_STDLIB", "auto")
+toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib
 # just 原生颜色配置（仅此一项）：回显的配方命令行用黄色
 JUST_COMMAND_COLOR := "yellow"
 
@@ -35,7 +39,7 @@ env:
 
 # 配置（Ninja + RelWithDebInfo；追加参数直接传 cmake）
 configure *ARGS:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{ARGS}}
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} {{ARGS}}
 
 # 基础构建
 build: configure
@@ -50,6 +54,11 @@ fmt:
 verbose: configure
     cmake --build {{builddir}} -j9 --verbose
 
+# 显式 Clang + libc++（独立构建目录，避免缓存切换）
+build-clang:
+    CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++
+    cmake --build build/clang -j9
+
 # 语法检测（clang-tidy + clang-format）
 check: configure
     cmake --build {{builddir}} -j9
@@ -58,18 +67,18 @@ check: configure
 
 # 单元测试（自动开启 GTest）
 test:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_ENABLE_GTEST=ON
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
     cmake --build {{builddir}} --target step1_tests -j9
     ctest --test-dir {{builddir}} --output-on-failure
 
 # 注释文档生成（clang-doc + Doxygen 双后端）
 docs:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_ENABLE_DOCS=ON
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON
     cmake --build {{builddir}} --target docs
 
 # 覆盖率（llvm-cov）
 coverage:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_COVERAGE=ON
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_COVERAGE=ON
     cmake --build {{builddir}} -j9
 
 # 微基准冒烟
@@ -79,15 +88,19 @@ bench: configure
 
 # libFuzzer 冒烟
 fuzz:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_FUZZERS=ON
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_FUZZERS=ON
     cmake --build {{builddir}} -j9
     cmake --build {{builddir}} --target run-fuzz
 
 # IWYU + include-cleaner
 iwyu:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON
     cmake --build {{builddir}} -j9
     @if cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check 不可用（工具有缺失）— 跳过"; fi
+
+# 本地复现 GitHub Actions 矩阵（macOS/Linux 通用）
+local-ci:
+    bash "{{justfile_directory()}}/../ci/run-local-ci.sh"
 
 # 清理构建目录
 clean:

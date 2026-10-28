@@ -125,8 +125,17 @@ Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可�
 `-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
 
 标准库策略：macOS 使用 libc++；Linux 使用系统默认 libstdc++
-（与 apt 的 spdlog/fmt/gtest/benchmark 一致）。需要 libc++ 时加
-`-DCXX_FORCE_LIBCXX=ON`，并准备 libc++ 版本的第三方依赖。
+（与 apt 的 spdlog/fmt/gtest/benchmark 一致）。需要 libc++ 时用
+`-DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++`，并准备 libc++ 版本的第三方依赖。
+
+工具链 auto 顺序：
+
+- macOS：`clang++ + libc++`（必须；Homebrew 依赖均为 libc++ ABI）
+- Linux：`g++ + libstdc++`（默认）→ `clang++ + libc++`（备选）
+
+可显式覆盖：`-DCXX_PREFERRED_COMPILER=clang++|g++ -DCXX_STDLIB=libc++|libstdc++`；
+快捷命令：`just build-clang`、`just local-ci`。GCC 只能用 libstdc++；
+macOS 如需 g++ 需另建全套 libstdc++ 依赖，不属于默认模板能力。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`mimalloc/jemalloc`、`doxygen`、`clang-doc`（随 llvm）。
 
 ## 4. 质量门禁

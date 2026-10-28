@@ -80,7 +80,12 @@ macro(cxx_setup_bootstrap)
   unset(_cxx_opt_mods)
   unset(_cxx_opt)
 
-  set(CMAKE_CXX_STANDARD 26)  # 视情况而定，因 #include <debugging> 必选头文件，最低 26
+  # Clang 23 使用 C++26；GCC 13/14 使用 C++23（源码未使用 <debugging>，C++23 足够）
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set(CMAKE_CXX_STANDARD 23)
+  else()
+    set(CMAKE_CXX_STANDARD 26)
+  endif()
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS ON)
 

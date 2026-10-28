@@ -27,6 +27,8 @@
 
 ```bash
 CI_DEPS_CHECK_ONLY=1 bash ci/install-deps-macos.sh   # macOS 只检查
+bash ci/run-local-ci.sh                              # 本机复现 GitHub Actions 全量矩阵
+just local-ci                                        # 同上（模板目录内）
 bash ci/run-template-matrix.sh                       # 全量矩阵
 CI_JUST_RECIPES="build test" bash ci/run-template-matrix.sh  # 快速子集
 ```
@@ -82,6 +84,10 @@ runs-on: [self-hosted, macos-27]
   - `single-exe-modules` 需要 libc++（`import std` 使用 libc++ 的 std.cppm），CI 用
     `ci/install-libcxx-deps.sh` 构建配套的 libc++ 版本依赖；
   - macOS 两模板都使用 Homebrew libc++ 依赖，无此问题。
+- **编译器 auto 顺序**：
+  - macOS：`clang++ + libc++`（Homebrew 依赖 ABI 固定；g++ 需自建 libstdc++ 依赖）
+  - Linux：`g++ + libstdc++` → `clang++ + libc++`
+  - modules 模板固定 `clang++ + libc++`；GCC 不支持 `-stdlib=libc++`。
 - macOS：Homebrew 安装/升级 cmake≥4.4.4、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、bqlog。
 - `bqlog` 是可选依赖；GitHub macOS Homebrew 若没有该 formula，会 warning 并跳过，不会让流水线失败。
 - BqLog 官方安装方式为 `brew install bqlog`，同时支持 **macOS 与 Linux Homebrew**

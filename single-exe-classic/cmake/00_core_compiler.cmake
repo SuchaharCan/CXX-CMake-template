@@ -15,18 +15,20 @@
 
 include_guard(GLOBAL)
 
-# ---- 用户可选：clang++ | g++（默认 clang++）----
-set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING
-    "C++ compiler driver: clang++ (default) or g++")
-set_property(CACHE CXX_PREFERRED_COMPILER PROPERTY STRINGS clang++ g++)
+# ---- 用户可选：auto | clang++ | g++（auto 按平台选择）----
+set(CXX_PREFERRED_COMPILER "auto" CACHE STRING
+    "C++ compiler: auto | clang++ | g++")
+set_property(CACHE CXX_PREFERRED_COMPILER PROPERTY STRINGS auto clang++ g++)
 string(TOLOWER "${CXX_PREFERRED_COMPILER}" _cxx_pref)
 if(_cxx_pref STREQUAL "gcc" OR _cxx_pref STREQUAL "g++")
   set(CXX_PREFERRED_COMPILER "g++" CACHE STRING "" FORCE)
 elseif(_cxx_pref STREQUAL "clang" OR _cxx_pref STREQUAL "clang++")
   set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
+elseif(_cxx_pref STREQUAL "auto")
+  set(CXX_PREFERRED_COMPILER "auto" CACHE STRING "" FORCE)
 else()
   message(FATAL_ERROR
-    "CXX_PREFERRED_COMPILER must be clang++ or g++ (got '${CXX_PREFERRED_COMPILER}')")
+    "CXX_PREFERRED_COMPILER must be auto, clang++ or g++ (got '${CXX_PREFERRED_COMPILER}')")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -213,6 +215,67 @@ if(CXX_LLVM_BIN)
   endforeach()
 endif()
 
+# ---- 平台默认 + 回退策略 ----
+# macOS: clang++ + libc++（默认）→ g++ + libstdc++（备选）
+# Linux:  g++ + libstdc++（默认）→ clang++ + libstdc++/libc++（备选）
+set(CXX_REQUIRE_STD_MODULE OFF CACHE INTERNAL "modules require libc++ std module")
+if(CXX_PREFERRED_COMPILER STREQUAL "auto")
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
+  else()
+    set(CXX_PREFERRED_COMPILER "g++" CACHE STRING "" FORCE)
+  endif()
+endif()
+find_program(_CXX_CLANG_PROGRAM NAMES clang++)
+set(_cxx_clang_available FALSE)
+if(_CXX_CLANG_PROGRAM OR EXISTS "${_cxx_clangxx}")
+  set(_cxx_clang_available TRUE)
+endif()
+if(CXX_PREFERRED_COMPILER STREQUAL "g++" AND NOT CXX_GXX_PROGRAM)
+  if(_cxx_clang_available)
+    message(STATUS "g++ not found — fallback to clang++")
+    set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
+  else()
+    message(FATAL_ERROR "No g++ or clang++ found (brew install gcc llvm)")
+  endif()
+elseif(CXX_PREFERRED_COMPILER STREQUAL "clang++" AND NOT _cxx_clang_available)
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    message(FATAL_ERROR
+      "clang++ is required on macOS. g++ + libstdc++ needs a matching "
+      "libstdc++ dependency build and is not enabled by default.")
+  elseif(CXX_GXX_PROGRAM)
+    message(STATUS "clang++ not found — fallback to g++")
+    set(CXX_PREFERRED_COMPILER "g++" CACHE STRING "" FORCE)
+  else()
+    message(FATAL_ERROR "No clang++ or g++ found (brew install llvm gcc)")
+  endif()
+endif()
+
+# 标准库策略：auto 按平台；GCC 只能用 libstdc++；modules 只能用 clang+libc++
+set(CXX_STDLIB "auto" CACHE STRING "C++ standard library: auto | libc++ | libstdc++")
+set_property(CACHE CXX_STDLIB PROPERTY STRINGS auto libc++ libstdc++)
+string(TOLOWER "${CXX_STDLIB}" _cxx_stdlib)
+if(_cxx_stdlib STREQUAL "auto")
+  if(CXX_PREFERRED_COMPILER STREQUAL "g++")
+    set(CXX_STDLIB "libstdc++" CACHE STRING "" FORCE)
+  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CXX_REQUIRE_STD_MODULE)
+    set(CXX_STDLIB "libc++" CACHE STRING "" FORCE)
+  else()
+    set(CXX_STDLIB "libstdc++" CACHE STRING "" FORCE)
+  endif()
+endif()
+if(CXX_PREFERRED_COMPILER STREQUAL "g++" AND CXX_STDLIB STREQUAL "libc++")
+  message(FATAL_ERROR
+    "GCC does not support -stdlib=libc++ in this template. "
+    "Use -DCXX_PREFERRED_COMPILER=clang++ with libc++, or g++ with libstdc++.")
+endif()
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
+   CXX_PREFERRED_COMPILER STREQUAL "clang++" AND CXX_STDLIB STREQUAL "libstdc++")
+  message(FATAL_ERROR
+    "Apple clang with libstdc++ is not supported here. "
+    "Use clang++ + libc++ or g++ + libstdc++.")
+endif()
+
 # ---- 按 CXX_PREFERRED_COMPILER 注入编译器（可被 -DCMAKE_CXX_COMPILER= 覆盖）----
 # 仅在与当前 CACHE 不一致时 FORCE，避免每次 cmake .. 都改写编译器导致无谓重检
 set(CXX_USING_CLANG OFF)
@@ -263,17 +326,11 @@ endif()
 set(CXX_USING_CLANG "${CXX_USING_CLANG}" CACHE BOOL "Active toolchain is Clang" FORCE)
 set(CXX_USING_GCC "${CXX_USING_GCC}" CACHE BOOL "Active toolchain is GCC" FORCE)
 
-# 标准库初始 flags：macOS Clang→libc++；Linux Clang→系统默认 libstdc++；
-# GCC→默认 libstdc++（勿强行 -stdlib=libc++）。需要 libc++ 时用 -DCXX_FORCE_LIBCXX=ON。
-set(CXX_FORCE_LIBCXX OFF CACHE BOOL "Force libc++ on Clang (Linux modules 场景用)")
-set(_cxx_want_libcxx OFF)
-if(CXX_USING_CLANG AND
-   (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CXX_FORCE_LIBCXX))
-  set(_cxx_want_libcxx ON)
-endif()
-set(CXX_USING_LIBCXX "${_cxx_want_libcxx}" CACHE BOOL "Using libc++" FORCE)
-
-if(_cxx_want_libcxx)
+# 标准库初始 flags：CXX_STDLIB=libc++（仅 clang++）时显式 -stdlib=libc++；
+# CXX_STDLIB=libstdc++ 时使用编译器默认（Linux clang/GCC；macOS g++）。
+set(CXX_USING_LIBCXX OFF CACHE BOOL "Using libc++" FORCE)
+if(CXX_PREFERRED_COMPILER STREQUAL "clang++" AND CXX_STDLIB STREQUAL "libc++")
+  set(CXX_USING_LIBCXX ON CACHE BOOL "Using libc++" FORCE)
   set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
   if(CXX_LIBCXX_LIBDIR AND CXX_UNWIND_LIBDIR)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
@@ -344,6 +401,10 @@ if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/.linuxbrew")
   list(APPEND CMAKE_PREFIX_PATH
     "$ENV{HOME}/.linuxbrew"
     "$ENV{HOME}/.linuxbrew/opt/bqlog")
+endif()
+# CI 用 libc++ 构建的第三方依赖前缀（Linux clang+libc++ 回退）
+if(DEFINED ENV{CXX_LIBCXX_DEPS_PREFIX} AND EXISTS "$ENV{CXX_LIBCXX_DEPS_PREFIX}")
+  list(PREPEND CMAKE_PREFIX_PATH "$ENV{CXX_LIBCXX_DEPS_PREFIX}")
 endif()
 
 if(APPLE AND CXX_USING_CLANG AND CXX_LLVM_BIN)

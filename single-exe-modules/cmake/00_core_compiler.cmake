@@ -22,18 +22,20 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja")
     "single-exe-modules requires the Ninja generator: cmake -G Ninja ..")
 endif()
 
-# ---- 用户可选：clang++ | g++（默认 clang++）----
-set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING
-    "C++ compiler driver: clang++ (default) or g++")
-set_property(CACHE CXX_PREFERRED_COMPILER PROPERTY STRINGS clang++ g++)
+# ---- 用户可选：auto | clang++ | g++（模块模板 auto=clang++）----
+set(CXX_PREFERRED_COMPILER "auto" CACHE STRING
+    "C++ compiler: auto | clang++ | g++")
+set_property(CACHE CXX_PREFERRED_COMPILER PROPERTY STRINGS auto clang++ g++)
 string(TOLOWER "${CXX_PREFERRED_COMPILER}" _cxx_pref)
 if(_cxx_pref STREQUAL "gcc" OR _cxx_pref STREQUAL "g++")
   set(CXX_PREFERRED_COMPILER "g++" CACHE STRING "" FORCE)
 elseif(_cxx_pref STREQUAL "clang" OR _cxx_pref STREQUAL "clang++")
   set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
+elseif(_cxx_pref STREQUAL "auto")
+  set(CXX_PREFERRED_COMPILER "auto" CACHE STRING "" FORCE)
 else()
   message(FATAL_ERROR
-    "CXX_PREFERRED_COMPILER must be clang++ or g++ (got '${CXX_PREFERRED_COMPILER}')")
+    "CXX_PREFERRED_COMPILER must be auto, clang++ or g++ (got '${CXX_PREFERRED_COMPILER}')")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -220,6 +222,37 @@ if(CXX_LLVM_BIN)
   endforeach()
 endif()
 
+# ---- 平台默认 + 回退策略（模块模板固定 clang++ + libc++）----
+# 模块的 import std 使用 libc++ 的 std.cppm；Ubuntu GCC 13 无 std 模块。
+set(CXX_REQUIRE_STD_MODULE ON CACHE INTERNAL "modules require libc++ std module")
+if(CXX_PREFERRED_COMPILER STREQUAL "auto")
+  set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
+endif()
+find_program(_CXX_CLANG_PROGRAM NAMES clang++)
+set(_cxx_clang_available FALSE)
+if(_CXX_CLANG_PROGRAM OR EXISTS "${_cxx_clangxx}")
+  set(_cxx_clang_available TRUE)
+endif()
+if(NOT _cxx_clang_available)
+  message(FATAL_ERROR
+    "single-exe-modules requires clang++ (import std via libc++ std.cppm). "
+    "Install llvm or set -DCXX_PREFERRED_COMPILER=clang++.")
+endif()
+if(CXX_PREFERRED_COMPILER STREQUAL "g++")
+  message(FATAL_ERROR
+    "single-exe-modules requires clang++ + libc++; GCC does not provide "
+    "the libc++ std module used by this template.")
+endif()
+
+# 模块模板固定 libc++
+set(CXX_STDLIB "libc++" CACHE STRING "C++ standard library (modules fixed to libc++)")
+set_property(CACHE CXX_STDLIB PROPERTY STRINGS libc++)
+if(CXX_STDLIB STREQUAL "auto" OR CXX_STDLIB STREQUAL "")
+  set(CXX_STDLIB "libc++" CACHE STRING "" FORCE)
+elseif(NOT CXX_STDLIB STREQUAL "libc++")
+  message(FATAL_ERROR "single-exe-modules requires CXX_STDLIB=libc++")
+endif()
+
 # ---- 按 CXX_PREFERRED_COMPILER 注入编译器（可被 -DCMAKE_CXX_COMPILER= 覆盖）----
 # 仅在与当前 CACHE 不一致时 FORCE，避免每次 cmake .. 都改写编译器导致无谓重检
 set(CXX_USING_CLANG OFF)
@@ -270,17 +303,9 @@ endif()
 set(CXX_USING_CLANG "${CXX_USING_CLANG}" CACHE BOOL "Active toolchain is Clang" FORCE)
 set(CXX_USING_GCC "${CXX_USING_GCC}" CACHE BOOL "Active toolchain is GCC" FORCE)
 
-# 标准库初始 flags：模块模板必须 libc++（import std 使用 libc++ 的 std.cppm）；
-# macOS / Linux 均如此，Linux 的第三方依赖需用同一 libc++ 构建。
-set(CXX_FORCE_LIBCXX ON CACHE BOOL "Force libc++ on Clang (modules require libc++)")
-set(_cxx_want_libcxx OFF)
-if(CXX_USING_CLANG AND
-   (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CXX_FORCE_LIBCXX))
-  set(_cxx_want_libcxx ON)
-endif()
-set(CXX_USING_LIBCXX "${_cxx_want_libcxx}" CACHE BOOL "Using libc++" FORCE)
-
-if(_cxx_want_libcxx)
+# 模块模板固定 libc++（import std 使用 libc++ 的 std.cppm）
+set(CXX_USING_LIBCXX ON CACHE BOOL "Using libc++" FORCE)
+if(CXX_PREFERRED_COMPILER STREQUAL "clang++" AND CXX_STDLIB STREQUAL "libc++")
   set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
   if(CXX_LIBCXX_LIBDIR AND CXX_UNWIND_LIBDIR)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
