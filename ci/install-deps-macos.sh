@@ -78,4 +78,16 @@ echo "cmake ${cmake_ver}"
 echo "just ${just_ver}"
 echo "clang++ ${clang_ver} (/opt/homebrew/opt/llvm/bin/clang++)"
 ninja --version | sed 's/^/ninja /'
+
+# ---- 让 clang 工具链命令在 PATH 中可用（Homebrew llvm 是 keg-only）----
+if [ "$CHECK_ONLY" != "1" ]; then
+  for tool in clang-format clang-tidy clang-doc clang-scan-deps; do
+    if [ -x "/opt/homebrew/opt/llvm/bin/${tool}" ]; then
+      ln -sf "/opt/homebrew/opt/llvm/bin/${tool}" "/usr/local/bin/${tool}" 2>/dev/null \
+        || sudo -n ln -sf "/opt/homebrew/opt/llvm/bin/${tool}" "/usr/local/bin/${tool}" 2>/dev/null \
+        || echo "warn: cannot symlink ${tool} into /usr/local/bin"
+    fi
+  done
+fi
+
 echo "macOS $(sw_vers -productVersion) — deps ok"

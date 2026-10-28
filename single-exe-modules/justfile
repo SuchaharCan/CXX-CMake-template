@@ -5,7 +5,7 @@
 #       just configure -DCXX_ENABLE_GTEST=ON   # 传参覆盖
 # =============================================================================
 
-set shell := ["zsh", "-cu"]
+set shell := ["bash", "-cu"]
 
 # ---- 必选系统环境变量（所有 recipe 生效，可用环境变量覆盖）----
 set export
@@ -13,6 +13,7 @@ CXX_PREFERRED_COMPILER := env_var_or_default("CXX_PREFERRED_COMPILER", "clang++"
 CXX_BQLOG_MODE := env_var_or_default("CXX_BQLOG_MODE", "header")
 CLICOLOR_FORCE := "1"
 CXX_BUILD_COLOR_FORCE := "1"
+clang_format := env_var_or_default("CLANG_FORMAT", "clang-format")
 # just 原生颜色配置（仅此一项）：回显的配方命令行用黄色
 JUST_COMMAND_COLOR := "yellow"
 
@@ -43,7 +44,7 @@ build: configure
 
 # 源码自动格式化（先精准检测 src/ 下源码，再 clang-format -i）
 fmt:
-    find src -type f \( -name '*.cxx' -o -name '*.hxx' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.cppm' \) -exec clang-format -i --style=file:cmake/.clang-format {} +
+    find src -type f \( -name '*.cxx' -o -name '*.hxx' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.cppm' \) -exec {{clang_format}} -i --style=file:cmake/.clang-format {} +
 
 # 详细构建（所有命令逐参数换行显示，便于锁定参数）
 verbose: configure

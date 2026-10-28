@@ -17,12 +17,13 @@ export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update
 $SUDO apt-get install -y --no-install-recommends \
   ca-certificates curl git xz-utils build-essential ninja-build ccache \
-  python3 python3-pip libspdlog-dev libfmt-dev libgtest-dev libbenchmark-dev \
+  python3 python3-pip zsh libspdlog-dev libfmt-dev libgtest-dev libbenchmark-dev \
   doxygen
 
 # 增强工具：缺失时模板自动降级，不阻断流水线
 $SUDO apt-get install -y --no-install-recommends grc || echo "warn: grc unavailable"
-$SUDO apt-get install -y --no-install-recommends iwyu || echo "warn: iwyu unavailable"
+# IWYU 版本与 Clang 23 常不匹配：不强制安装，just iwyu 会自动跳过
+echo "info: IWYU 未安装（可选工具，just iwyu 将降级跳过）"
 
 # ---- CMake ≥4.4.4 ----
 _cmake_need=1

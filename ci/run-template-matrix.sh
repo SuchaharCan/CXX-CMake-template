@@ -14,6 +14,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RECIPES="${CI_JUST_RECIPES:-env list build check test docs bench fuzz coverage iwyu verbose}"
+LOGDIR="${ROOT}/.ci-logs"
+mkdir -p "$LOGDIR"
 
 found=0
 failed=()
@@ -36,7 +38,7 @@ for justfile in "$ROOT"/*/justfile; do
 
   summary="$(cd "$template_dir" && just --summary 2>/dev/null || true)"
   if [ -z "$summary" ]; then
-    failed+=("${template_name}:justfile 解析失败")
+    failed+=("${template_name}||")
     continue
   fi
 
@@ -47,11 +49,12 @@ for justfile in "$ROOT"/*/justfile; do
     fi
     echo
     echo "──────── just ${recipe} @ ${template_name} ────────"
-    if (cd "$template_dir" && just "$recipe"); then
+    log="${LOGDIR}/${template_name}-${recipe}.log"
+    if (cd "$template_dir" && just "$recipe") 2>&1 | tee "$log"; then
       echo "[ok]   ${template_name}: just ${recipe}"
     else
       echo "[FAIL] ${template_name}: just ${recipe}"
-      failed+=("${template_name}:just ${recipe}")
+      failed+=("${template_name}|${recipe}|${log}")
     fi
   done
 done
@@ -69,6 +72,17 @@ if [ "${#failed[@]}" -eq 0 ]; then
 fi
 echo "结果: 失败项 ${#failed[@]}"
 for f in "${failed[@]}"; do
-  echo "  - $f"
+  IFS='|' read -r name recipe log <<< "$f"
+  echo
+  if [ -z "${recipe:-}" ]; then
+    echo "  ✗ ${name}: justfile 解析失败"
+    continue
+  fi
+  echo "  ✗ ${name}: just ${recipe}"
+  echo "    命令: cd ${ROOT}/${name} && just ${recipe}"
+  if [ -n "${log:-}" ] && [ -f "$log" ]; then
+    echo "    错误输出（末尾 30 行）:"
+    tail -n 30 "$log" | sed 's/^/      /'
+  fi
 done
 exit 1

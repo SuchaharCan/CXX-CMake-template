@@ -7,6 +7,7 @@
 - `clean` 不自动执行（会删除构建目录）；可用 `CI_JUST_RECIPES` 覆盖命令集合。
 - 任一命令失败会继续执行其余命令，结尾汇总失败项并返回非零退出码。
 - 日志会作为 Actions artifact 上传（7 天保留）。
+- 每条命令输出保存到 `.ci-logs/<模板>-<命令>.log`；失败汇总会打印命令与末尾 30 行错误输出。
 
 ## 工作流文件
 
@@ -16,6 +17,10 @@
 - `ci/install-deps-ubuntu.sh` — Ubuntu 依赖安装（兼容 GitHub runner 的 sudo）
 - `ci/install-deps-macos.sh` — macOS 依赖安装/升级（cmake≥4.4.4、clang≥23.1 等）
 - `ci/run-template-matrix.sh` — 模板矩阵执行器
+
+> `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
+> `CLANG_FORMAT` 环境变量（默认 `clang-format`）定位格式化工具；
+> 两个 CI Job 都显式设置了绝对路径。
 
 ## 本地验证
 

@@ -27,6 +27,7 @@ jobs:
     env:
       CI_FRESH_BUILD: "1"
       CCACHE_DISABLE: "1"
+      CLANG_FORMAT: /usr/local/bin/clang-format
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +48,7 @@ jobs:
           name: ci-matrix-linux
           path: |
             ci-matrix-linux.log
+            .ci-logs/**
             */log/cmake_build.log
             */log/cmake_configure.log
           if-no-files-found: ignore
@@ -66,6 +68,7 @@ jobs:
     env:
       CI_FRESH_BUILD: "1"
       CCACHE_DISABLE: "1"
+      CLANG_FORMAT: /opt/homebrew/opt/llvm/bin/clang-format
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,6 +89,7 @@ jobs:
           name: ci-matrix-macos
           path: |
             ci-matrix-macos.log
+            .ci-logs/**
             */log/cmake_build.log
             */log/cmake_configure.log
           if-no-files-found: ignore
