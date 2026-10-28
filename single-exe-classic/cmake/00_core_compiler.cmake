@@ -47,12 +47,16 @@ function(_cxx_detect_homebrew_prefix out_var)
       return()
     endif()
   endif()
-  foreach(_cand IN ITEMS "/opt/homebrew" "/usr/local")
+  foreach(_cand IN ITEMS "/opt/homebrew" "/usr/local" "/home/linuxbrew/.linuxbrew")
     if(EXISTS "${_cand}")
       set(${out_var} "${_cand}" PARENT_SCOPE)
       return()
     endif()
   endforeach()
+  if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/.linuxbrew")
+    set(${out_var} "$ENV{HOME}/.linuxbrew" PARENT_SCOPE)
+    return()
+  endif()
   set(${out_var} "" PARENT_SCOPE)
 endfunction()
 
@@ -80,7 +84,14 @@ function(_cxx_detect_llvm_root out_var)
   endif()
   find_program(_cxx_any clang++)
   if(_cxx_any)
-    get_filename_component(_bin "${_cxx_any}" DIRECTORY)
+    set(_cxx_any_path "${_cxx_any}")
+    # Linux：symlink 可能在 /usr/local/bin，解析到 /usr/lib/llvm-23 以获得正确 -L 路径；
+    # macOS 保持 Homebrew opt 软链（解析到 Cellar 会在 brew 升级后失效）
+    get_filename_component(_cxx_any_real "${_cxx_any}" REALPATH)
+    if(NOT _cxx_any_real MATCHES "/Cellar/")
+      set(_cxx_any_path "${_cxx_any_real}")
+    endif()
+    get_filename_component(_bin "${_cxx_any_path}" DIRECTORY)
     get_filename_component(_root "${_bin}" DIRECTORY)
     if(EXISTS "${_root}/lib")
       set(${out_var} "${_root}" PARENT_SCOPE)
@@ -288,7 +299,7 @@ function(cxx_sanitize_linker_flags)
     string(REPLACE " -lunwind" "" _flags "${_flags}")
     string(REGEX REPLACE "^-lunwind " "" _flags "${_flags}")
     string(STRIP "${_flags}" _flags)
-    if(_flags MATCHES "lib/unwind" OR _flags MATCHES "libc\\+\\+")
+    if(APPLE AND (_flags MATCHES "lib/unwind" OR _flags MATCHES "libc\\+\\+"))
       set(_flags "${_flags} -lunwind")
     endif()
     set(${_var} "${_flags}" CACHE STRING "" FORCE)
@@ -308,6 +319,22 @@ if(CXX_HOMEBREW_PREFIX)
     "${CXX_HOMEBREW_PREFIX}/opt/spdlog"
     "${CXX_HOMEBREW_PREFIX}/opt/fmt"
     "${CXX_HOMEBREW_PREFIX}/opt/bqlog")
+endif()
+# Linuxbrew 备选路径（brew 不在 PATH 时也能发现 bqlog/spdlog/fmt 等）
+foreach(_cxx_brew_alt IN ITEMS "/home/linuxbrew/.linuxbrew")
+  if(EXISTS "${_cxx_brew_alt}")
+    list(APPEND CMAKE_PREFIX_PATH
+      "${_cxx_brew_alt}"
+      "${_cxx_brew_alt}/opt/googletest"
+      "${_cxx_brew_alt}/opt/spdlog"
+      "${_cxx_brew_alt}/opt/fmt"
+      "${_cxx_brew_alt}/opt/bqlog")
+  endif()
+endforeach()
+if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/.linuxbrew")
+  list(APPEND CMAKE_PREFIX_PATH
+    "$ENV{HOME}/.linuxbrew"
+    "$ENV{HOME}/.linuxbrew/opt/bqlog")
 endif()
 
 if(APPLE AND CXX_USING_CLANG AND CXX_LLVM_BIN)

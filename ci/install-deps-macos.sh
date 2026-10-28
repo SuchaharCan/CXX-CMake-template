@@ -22,7 +22,7 @@ fi
 
 export HOMEBREW_NO_AUTO_UPDATE=1
 
-FORMULAE="cmake ninja just grc ccache spdlog fmt googletest google-benchmark doxygen llvm bqlog"
+FORMULAE="cmake ninja just grc ccache spdlog fmt googletest google-benchmark doxygen llvm"
 
 missing=()
 for f in $FORMULAE; do
@@ -68,6 +68,21 @@ if [ "${#upgrade[@]}" -gt 0 ]; then
   cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
   just_ver="$(just --version | awk '{print $2}')"
   clang_ver="$(/opt/homebrew/opt/llvm/bin/clang++ --version | head -1 | sed -E 's/.* version ([0-9.]+).*/\1/')"
+fi
+
+# bqlog 是可选依赖：GitHub 的 Homebrew 可能没有该 formula，不应阻断 CI
+if ! brew list --versions bqlog >/dev/null 2>&1; then
+  if [ "$CHECK_ONLY" = "1" ]; then
+    brew info --formula bqlog >/dev/null 2>&1 \
+      || echo "warn: bqlog missing / local brew index stale (optional)"
+  else
+    # GitHub runner 的 Homebrew 索引可能较旧；官方安装方式就是 brew install bqlog
+    if ! brew info --formula bqlog >/dev/null 2>&1; then
+      echo "Homebrew index missing bqlog — running brew update"
+      brew update --quiet || true
+    fi
+    brew install bqlog || echo "warn: bqlog unavailable on this Homebrew (optional)"
+  fi
 fi
 
 check_min "$cmake_ver" "4.4.4" cmake

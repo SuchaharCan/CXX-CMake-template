@@ -173,6 +173,23 @@ function(cxx_find_bqlog)
     return()
   endif()
 
+  # bqlog 安装位置：macOS/Linux Homebrew（opt/bqlog）、Linuxbrew 备选、显式 ROOT
+  set(_bq_roots "")
+  foreach(_root IN ITEMS
+      "${CXX_HOMEBREW_PREFIX}/opt/bqlog"
+      "/home/linuxbrew/.linuxbrew/opt/bqlog"
+      "$ENV{HOME}/.linuxbrew/opt/bqlog"
+      "$ENV{CXX_BQLOG_ROOT}"
+      "$ENV{BQLOG_ROOT}")
+    if(NOT _root STREQUAL "" AND EXISTS "${_root}")
+      list(APPEND _bq_roots "${_root}")
+    endif()
+  endforeach()
+  foreach(_root IN LISTS _bq_roots)
+    set(ENV{PKG_CONFIG_PATH}
+      "${_root}/lib/pkgconfig:${_root}/lib64/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+  endforeach()
+
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
     pkg_check_modules(PC_bqlog QUIET IMPORTED_TARGET bqlog)
@@ -192,8 +209,10 @@ function(cxx_find_bqlog)
         PATHS "${PC_bqlog_LIBRARY_DIRS}" NO_DEFAULT_PATH)
     endif()
   else()
-    find_path(_inc bq_log/bq_log.h PATH_SUFFIXES include)
-    find_library(_lib NAMES libBqLog.a libBqLog.dylib libBqLog.so BqLog)
+    find_path(_inc bq_log/bq_log.h
+      HINTS ${_bq_roots} PATH_SUFFIXES include)
+    find_library(_lib NAMES libBqLog.a libBqLog.dylib libBqLog.so BqLog
+      HINTS ${_bq_roots} PATH_SUFFIXES lib lib64)
   endif()
 
   if(_inc AND EXISTS "${_inc}/bq_log/bq_log.h")

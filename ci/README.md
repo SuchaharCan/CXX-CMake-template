@@ -75,6 +75,13 @@ runs-on: [self-hosted, macos-27]
 
 ## 依赖说明
 
-- Ubuntu：cmake≥4.4.4（PyPI wheel）、clang 23.1 + libc++（apt.llvm.org）、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen。
+- Ubuntu：cmake≥4.4.4（**Kitware 官方二进制，不使用 Python/pip**）、clang 23.1 + libc++（apt.llvm.org，含运行库）、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen。
 - macOS：Homebrew 安装/升级 cmake≥4.4.4、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、bqlog。
+- `bqlog` 是可选依赖；GitHub macOS Homebrew 若没有该 formula，会 warning 并跳过，不会让流水线失败。
+- BqLog 官方安装方式为 `brew install bqlog`，同时支持 **macOS 与 Linux Homebrew**
+  （Linuxbrew 默认前缀 `/home/linuxbrew/.linuxbrew`）。CI 会：
+  - macOS：本地 brew 索引缺少 `bqlog` 时先 `brew update`，再 `brew install bqlog`；
+  - Linux：若存在 Linuxbrew（`brew` 命令或 `/home/linuxbrew/.linuxbrew/bin/brew`）则同样安装 bqlog；
+  - 两者都不可用时仅 warning，模板自动跳过 bqlog 接入。
+- 非标准安装路径：`-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT`。
 - `bqlog` 在 Ubuntu 缺失时模板自动 warning 并跳过，不影响构建与测试。

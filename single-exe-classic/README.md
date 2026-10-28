@@ -119,6 +119,10 @@ ctest --output-on-failure             # 需 -DCXX_ENABLE_GTEST=ON
 ## 3. 依赖
 
 必选：`cmake`、`ninja`、`just`、`llvm`(clang++)、`spdlog`、`grc`；推荐 `bqlog`（缺失不阻断构建，只跳过接入）。
+
+bqlog 官方安装方式：`brew install bqlog`（macOS 与 Linux Homebrew 均可；
+Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可用
+`-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`mimalloc/jemalloc`、`doxygen`、`clang-doc`（随 llvm）。
 
 ## 4. 质量门禁

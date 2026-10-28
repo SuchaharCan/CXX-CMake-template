@@ -4,7 +4,8 @@
 # 兼容 root（容器）与 GitHub runner（非 root + passwordless sudo）。
 # 安装：cmake≥4.4.4 / clang++ 23.1 / libc++ / ninja / just / grc
 #       / spdlog / fmt / gtest / benchmark / doxygen / ccache
-# bqlog 不在 Ubuntu 仓库：模板会 warning 并跳过（非阻断）。
+# bqlog：官方方式 brew install bqlog（Linux 使用 Linuxbrew）；
+# 无 Linuxbrew 时模板 warning 并跳过（可选依赖，非阻断）。
 # =============================================================================
 set -euo pipefail
 
@@ -17,7 +18,7 @@ export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update
 $SUDO apt-get install -y --no-install-recommends \
   ca-certificates curl git xz-utils build-essential ninja-build ccache \
-  python3 python3-pip zsh libspdlog-dev libfmt-dev libgtest-dev libbenchmark-dev \
+  python3 zsh pkg-config libspdlog-dev libfmt-dev libgtest-dev libbenchmark-dev \
   doxygen
 
 # 增强工具：缺失时模板自动降级，不阻断流水线
@@ -25,7 +26,7 @@ $SUDO apt-get install -y --no-install-recommends grc || echo "warn: grc unavaila
 # IWYU 版本与 Clang 23 常不匹配：不强制安装，just iwyu 会自动跳过
 echo "info: IWYU 未安装（可选工具，just iwyu 将降级跳过）"
 
-# ---- CMake ≥4.4.4 ----
+# ---- CMake ≥4.4.4（官方二进制，不依赖 Python/pip）----
 _cmake_need=1
 if command -v cmake >/dev/null 2>&1; then
   _cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
@@ -34,7 +35,16 @@ if command -v cmake >/dev/null 2>&1; then
   fi
 fi
 if [ "$_cmake_need" -eq 1 ]; then
-  $SUDO python3 -m pip install --break-system-packages "cmake>=4.4.4"
+  CMAKE_VERSION_PIN="${CMAKE_VERSION_PIN:-4.4.5}"
+  CMAKE_TARBALL="cmake-${CMAKE_VERSION_PIN}-linux-x86_64.tar.gz"
+  curl -fsSL -o "/tmp/${CMAKE_TARBALL}" \
+    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_PIN}/${CMAKE_TARBALL}"
+  $SUDO mkdir -p /opt
+  $SUDO tar -xzf "/tmp/${CMAKE_TARBALL}" -C /opt
+  for tool in cmake ctest cpack; do
+    $SUDO ln -sf "/opt/cmake-${CMAKE_VERSION_PIN}-linux-x86_64/bin/${tool}" \
+      "/usr/local/bin/${tool}"
+  done
 fi
 
 # ---- just ≥1.20 ----
@@ -59,6 +69,11 @@ if ! command -v clang++-23 >/dev/null 2>&1; then
 fi
 $SUDO apt-get install -y --no-install-recommends \
   clang-tools-23 libc++-23-dev libc++abi-23-dev
+# libc++ 运行库（-stdlib=libc++ 链接 -pthread 检查所必需）
+$SUDO apt-get install -y --no-install-recommends libc++1 libc++abi1 \
+  || echo "warn: libc++ runtime package name mismatch; check apt.llvm.org"
+$SUDO apt-get install -y --no-install-recommends llvm-libunwind1 libunwind-23-dev \
+  || echo "warn: libunwind package name mismatch; check apt.llvm.org"
 $SUDO apt-get install -y --no-install-recommends clang-format-23 clang-tidy-23 \
   || echo "warn: clang-format-23/clang-tidy-23 unavailable (use clang-tools-23 binaries)"
 $SUDO ln -sf /usr/lib/llvm-23/bin/clang   /usr/local/bin/clang
@@ -69,6 +84,34 @@ $SUDO ln -sf /usr/lib/llvm-23/bin/clang-tidy   /usr/local/bin/clang-tidy
 $SUDO ln -sf /usr/lib/llvm-23/bin/clang-doc    /usr/local/bin/clang-doc
 $SUDO ln -sf /usr/lib/llvm-23/bin/llvm-ar      /usr/local/bin/llvm-ar
 $SUDO ln -sf /usr/lib/llvm-23/bin/llvm-ranlib  /usr/local/bin/llvm-ranlib
+
+# ---- bqlog（官方推荐 brew install bqlog；Linux 使用 Linuxbrew）----
+BREW_BIN=""
+if command -v brew >/dev/null 2>&1; then
+  BREW_BIN="$(command -v brew)"
+elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+  BREW_BIN="/home/linuxbrew/.linuxbrew/bin/brew"
+fi
+if [ -n "$BREW_BIN" ]; then
+  if ! "$BREW_BIN" list --versions bqlog >/dev/null 2>&1; then
+    if ! "$BREW_BIN" info --formula bqlog >/dev/null 2>&1; then
+      echo "Homebrew index missing bqlog — running brew update"
+      "$BREW_BIN" update --quiet || true
+    fi
+    "$BREW_BIN" install bqlog || echo "warn: bqlog brew install failed (optional)"
+  fi
+else
+  echo "info: Linuxbrew 未安装；bqlog 跳过（可选依赖）。安装方式：brew install bqlog"
+fi
+
+# ---- 预检：-stdlib=libc++ + -pthread 必须能编译链接（spdlog/benchmark 依赖 Threads）----
+printf '#include <thread>\nint main(){ std::thread t([]{}); t.join(); return 0; }\n' > /tmp/pthread_probe.cpp
+if ! clang++ -std=c++23 -stdlib=libc++ -pthread /tmp/pthread_probe.cpp -o /tmp/pthread_probe; then
+  echo "error: libc++ -pthread link failed — check libc++ runtime packages" >&2
+  clang++ -v -std=c++23 -stdlib=libc++ -pthread /tmp/pthread_probe.cpp -o /tmp/pthread_probe 2>&1 | tail -20 >&2
+  exit 1
+fi
+echo "libc++ -pthread link: ok"
 
 # ---- 版本自检 ----
 cmake --version | head -1

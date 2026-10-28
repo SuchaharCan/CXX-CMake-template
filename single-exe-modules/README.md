@@ -58,6 +58,10 @@ just iwyu       # IWYU + include-cleaner
 ## 3. 依赖与版本门禁
 
 必选：`cmake ≥4.4.4`、`ninja`、`clang++ 23.1`（`import std` 需 Clang ≥17，模板锁定 23.1）、`just`、`spdlog`、`grc`；推荐 `bqlog`。
+
+bqlog 官方安装方式：`brew install bqlog`（macOS 与 Linux Homebrew 均可；
+Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可用
+`-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
 可选：`googletest`（`-DCXX_ENABLE_GTEST=ON`）、`ccache`、`google-benchmark`、`doxygen`、`clang-doc`。
 
 ## 4. 质量门禁
