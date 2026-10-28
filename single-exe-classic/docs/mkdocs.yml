@@ -1,0 +1,14 @@
+site_name: sc-cmake single-exe-classic
+site_description: Header-based Single Exe engineering template
+docs_dir: .
+site_dir: ../build/docs/mkdocs
+nav:
+  - Home: ENGINEERING.md
+  - Safety awareness: SAFETY_AWARENESS.md
+  - Traceability stub: traceability/TRACEABILITY_MATRIX.md
+theme:
+  name: material
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true

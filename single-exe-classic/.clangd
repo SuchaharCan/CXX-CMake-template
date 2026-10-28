@@ -1,0 +1,30 @@
+CompileFlags:
+  CompilationDatabase: build/
+  Add:
+    - "-Wall"
+    - "-Wextra"
+    - "-Wconversion"
+    - "-Wno-error"
+  Remove:
+    - "-Werror"
+
+Diagnostics:
+  # include-cleaner（clangd）：Unused + Missing 直接依赖
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+  ClangTidy:
+    Add:
+      - performance-*
+      - bugprone-*
+      - misc-include-cleaner
+      - modernize-use-auto
+      - modernize-use-using
+    Remove:
+      - readability-implicit-bool-conversion
+      - modernize-use-trailing-return-type
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+  Designators: true

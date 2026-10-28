@@ -1,0 +1,42 @@
+---
+# =============================================================================
+# clang-format — 代码排版规范（syntax-check 目标使用本文件）风格统一
+#
+# UpdateTime:2026-10-14
+# CodeReviewTime:2026-10-14 代码评审时间
+# 基底：Google C++ Style，再按下列项微调
+# 用法：
+#   cmake --build . --target syntax-check   # --dry-run --Werror，不合规即失败
+#   clang-format -i --style=file:cmake/.clang-format src/*.cxx src/*.hxx
+# =============================================================================
+
+# 语言与风格基底
+Language: Cpp
+BasedOnStyle: Google # Google 风格为起点（缩进、命名习惯等）
+
+# 缩进与行宽
+IndentWidth: 2 # 缩进 2 空格
+ColumnLimit: 100 # 一行最多 100 列，超出则断行
+
+# 指针/引用贴靠类型一侧：T* p / T& r（非 T *p）
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# 短语句策略：偏展开，便于阅读与调试
+AllowShortFunctionsOnASingleLine: Inline # 仅允许 inline 短函数单行
+AllowShortIfStatementsOnASingleLine: Never # if 不压缩成单行
+AllowShortLoopsOnASingleLine: false # for/while 不压缩成单行
+
+# 大括号：Attach = K&R / Google 风格（左括号不另起一行）
+BreakBeforeBraces: Attach
+
+# #include 分组重排，并区分大小写排序
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+
+# 按 C++20 方言解析（模板为 C++23 源码时仍兼容）
+Standard: c++20
+
+# 强行指定使用 UNIX 换行符 (LF)
+LineEnding: LF
+...

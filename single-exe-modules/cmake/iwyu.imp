@@ -1,0 +1,8 @@
+[
+  { include: ["@<concepts>", "private", "<concepts>", "public"] },
+  { include: ["@<cstdint>", "private", "<cstdint>", "public"] },
+  { include: ["@<expected>", "private", "<expected>", "public"] },
+  { include: ["@<span>", "private", "<span>", "public"] },
+  { include: ["@<string_view>", "private", "<string_view>", "public"] },
+  { include: ["@\".*Config\\.hxx\"", "private", "\"CMakeTutorialConfig.hxx\"", "public"] }
+]

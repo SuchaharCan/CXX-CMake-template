@@ -1,19 +1,120 @@
-CMakeLists.txt.user
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-Testing
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
-CMakeUserPresets.json
+# ---> Build trees (CMake presets / out-of-source)
+/build/
+/Build/
+/build-*/
+/cmake-build-*/
+/out/
+/out_*/
+/install/
+/dist/
+/.deps/
+/log/
+/.cxx_build_meta/
+/.cache/
 
-# CLion
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#cmake-build-*
+# ---> 模板本地构建产物与场景日志（勿提交）
+templates/**/build/
+templates/**/build-*/
+templates/**/log/
+# 允许模板用 .gitkeep 保留 log/ 目录结构（运行日志仍全部忽略）
+!templates/**/log/
+templates/**/log/*
+!templates/**/log/.gitkeep
+templates/**/.cache/
+templates/**/.cxx_build_meta/
+templates/**/*.pak
+templates/**/*.zip
+templates/**/cxx_build_tee
+templates/**/cxx_ninja_tee
+
+
+# ---> CMake / Ninja intermediates
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+cmake_uninstall.cmake
+install_manifest.txt
+CTestTestfile.cmake
+CTestConfiguration.ini
+DartConfiguration.tcl
+Makefile
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.ninja
+rules.ninja
+build.ninja
+.cmake/
+CMakeTutorialConfig.hxx
+*_tests_*_discovery.cmake
+*_tests_*_include.cmake
+*_tests_*_tests.cmake
+cmake_test_discovery_*.json
+
+# ---> Compiled objects / libs / modules
+*.d
+*.o
+*.obj
+*.lo
+*.slo
+*.a
+*.lib
+*.la
+*.lai
+*.so
+*.so.*
+*.dylib
+*.dll
+*.dll.a
+*.exp
+*.ilk
+*.pdb
+*.dwo
+*.gch
+*.pch
+*.mod
+*.smod
+*.pcm
+*.gcm
+*.ifc
+*.cppm.o
+
+# ---> Executables & macOS leftovers
+*.exe
+*.out
+*.app
+*.dSYM/
+*.dSYM
+
+# ---> Test / coverage / sanitizer
+/Testing/
+Testing/
+*.gcno
+*.gcda
+*.gcov
+coverage/
+coverage.info
+*.profraw
+*.profdata
+default.profraw
+asan.log*
+ubsan.log*
+tsan.log*
+
+# ---> Tool caches & IDE
+.cache/
+.ccache/
+.clangd/
+.clang-tidy.cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db
+

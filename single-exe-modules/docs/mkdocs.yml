@@ -1,0 +1,14 @@
+site_name: sc-cmake 000_Single_Exe_Module
+site_description: C++23 modules Single Exe engineering template
+docs_dir: .
+site_dir: ../build/docs/mkdocs
+nav:
+  - Home: ENGINEERING.md
+  - Safety awareness: SAFETY_AWARENESS.md
+  - Traceability stub: traceability/TRACEABILITY_MATRIX.md
+theme:
+  name: material
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true

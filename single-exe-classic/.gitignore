@@ -1,0 +1,65 @@
+# =============================================================================
+# .gitignore — single-exe-classic 模板
+# 三分区维护：
+#   [1] 必填文件/文件夹 —— 受版本控制，禁止忽略（清单见下方注释）
+#   [2] 必填空文件     —— .gitkeep 占位，保留目录结构
+#   [3] 排除文件/文件夹 —— 生成物 / 日志 / 工具 / 系统 / 本地配置
+# =============================================================================
+
+# ---- [1] 必填文件/文件夹（受版本控制，勿删勿忽略）------------------
+#   CMakeLists.txt     根入口（业务源列表 + phase API）
+#   CMakePresets.json  多方案配置（default/debug/release/fuzz/docs/gcc…）
+#   justfile           just 自动化（just 为必选依赖）
+#   README.md          唯一主文档（架构说明 + 重大变更记录）
+#   .clangd            clangd 配置（CompilationDatabase: build/）
+#   cmake/             构建基建（00_core_* / 10_core_* / 9*_opt_* /
+#                      cxx.palette / cxx_highlight.rules / .clang-tidy* / .clang-format）
+#   src/               业务源码（.cxx / .hxx）
+#   bench/             Google Benchmark 基准源码
+#   fuzz/              libFuzzer harness 与 fuzz/corpus/ 语料
+#   docs/              文档素材（Doxyfile.in / sphinx / mkdocs / 路线图等）
+
+# ---- [2] 必填空文件（.gitkeep 占位，保留目录结构）------------------
+#   log/.gitkeep — log/ 目录本体入库；运行日志全部忽略（规则见 [3.2]）
+/log/*
+!/log/.gitkeep
+
+# ---- [3.1] 排除：构建产物 -----------------------------------------
+/build/
+build-*/
+*.o
+*.a
+*.dylib
+*.so
+CMakeCache.txt
+CMakeFiles/
+CMakeTutorialConfig.hxx
+compile_commands.json
+Testing/
+.cxx_build_meta/
+
+# ---- [3.2] 排除：运行时日志与本地缓存 ------------------------------
+.cache/
+
+# ---- [3.3] 排除：覆盖率 / 调试 / 崩溃产物 ---------------------------
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.dSYM/
+core
+core.*
+
+# ---- [3.4] 排除：IDE / 编辑器 / 系统 --------------------------------
+.DS_Store
+.vscode/
+.idea/
+cmake-build-*/
+*.user
+.clangd-index/
+
+# ---- [3.5] 排除：本地 / 敏感配置 ------------------------------------
+CMakeUserPresets.json
+.env
+.env.*
+!.env.example

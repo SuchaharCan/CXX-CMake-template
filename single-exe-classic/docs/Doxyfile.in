@@ -1,0 +1,18 @@
+# Doxyfile.in — configured by cmake/Docs.cmake
+PROJECT_NAME           = "@PROJECT_NAME@"
+PROJECT_NUMBER         = "@PROJECT_VERSION@"
+OUTPUT_DIRECTORY       = "@CMAKE_BINARY_DIR@/docs/doxygen"
+INPUT                  = "@CMAKE_SOURCE_DIR@/src"
+FILE_PATTERNS          = *.hxx *.h *.hpp *.cxx *.cpp *.cppm
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+HAVE_DOT               = NO
+HTML_OUTPUT            = html
+USE_MDFILE_AS_MAINPAGE =

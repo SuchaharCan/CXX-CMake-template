@@ -1,0 +1,92 @@
+# =============================================================================
+# GitHub Actions —— 模板矩阵 CI
+# 触发：push(master/main) / pull_request / 手动 workflow_dispatch
+# 动作：安装依赖 → 自动发现所有含 justfile 的模板 → 逐个执行 just 命令
+# 任务：Linux(ubuntu-24.04) + macOS(macos-26 arm64，GitHub 最新托管镜像)
+# =============================================================================
+name: Template Matrix CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux / ubuntu-24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CI_FRESH_BUILD: "1"
+      CCACHE_DISABLE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: bash ci/install-deps-ubuntu.sh
+
+      - name: Run template matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ci/run-template-matrix.sh 2>&1 | tee ci-matrix-linux.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-matrix-linux
+          path: |
+            ci-matrix-linux.log
+            */log/cmake_build.log
+            */log/cmake_configure.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    name: macOS / ${{ matrix.os }}
+    # GitHub 当前最新托管 macOS 为 26（arm64，标签 macos-26）。
+    # 如需 macOS 27：在 macOS 27 机器注册 self-hosted runner（标签 macos-27），
+    # 将 runs-on 改为 [self-hosted, macos-27]。
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26]
+    env:
+      CI_FRESH_BUILD: "1"
+      CCACHE_DISABLE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Homebrew)
+        run: bash ci/install-deps-macos.sh
+
+      - name: Run template matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ci/run-template-matrix.sh 2>&1 | tee ci-matrix-macos.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-matrix-macos
+          path: |
+            ci-matrix-macos.log
+            */log/cmake_build.log
+            */log/cmake_configure.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,104 @@
+# .clang-tidy YAML 语法
+---
+# =============================================================================
+# clang-tidy — 静态代码分析工具
+# 工业 / 金融业务向 C++ 规范（默认随 CXX_ENABLE_CLANG_TIDY=ON）
+#
+# CodeReviewTime:2026-10-14
+# 目的：
+#       1. 排查潜在Bug
+#       2. 强制执行行业规范 -
+#       3. 识别性能问题
+#       4. 现代化C++标准建议
+#       5. 自动修复 --fix
+# 取向（交易/清算/风控/中台常见要求）：
+#   - 初始化与生命周期：杜绝未初始化、use-after-move、错误析构
+#   - 数值与转换：收窄转换、浮点误用、整数溢出倾向
+#   - 资源与安全：CERT / Core Guidelines 高信号项、格式化安全
+#   - 可维护：override、空容器 empty()、冗余写法
+#   - 静态分析：clang-analyzer 核心检查
+#
+# 策略：-* 全关 → 白名单开启；关掉金融场景噪声大的规则
+# 范围：HeaderFilterRegex 仅 src/；系统库告警抑制属正常
+#
+#
+# =============================================================================
+
+Checks: >
+  -*,
+
+  # ----- Clang Static Analyzer（缺陷/路径敏感） 深度静态分析-----
+  clang-analyzer-*,
+  -clang-analyzer-webkit.*,
+  -clang-analyzer-osx.*,
+
+   # ----- Clang 编译器诊断 对应编译器警告 类似-Wall, -Wextra  一般不建议开启 不过你可以尝试----
+  # clang-diagnostic-*,
+
+  # ----- bugprone：生产事故高发 常见编码错误 -----
+  bugprone-*,
+  -bugprone-branch-clone,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-switch-missing-default-case,
+  -bugprone-exception-escape,
+  -bugprone-throwing-static-initialization,
+  # 金融场景保留 narrowing（金额/精度相关转换要可见）
+  # 即：不禁用 bugprone-narrowing-conversions
+
+  # ----- CERT（安全编码，金融合规审计常对标）-----
+  cert-dcl*,
+  cert-env*,
+  cert-err*,
+  -cert-err58-cpp,
+  cert-flp*,
+  cert-msc*,
+  cert-oop*,
+
+  # ----- C++ Core Guidelines（工业子集） 核心准则-----
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-special-member-functions,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-virtual-class-destructor,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+
+  # ----- HICPP（高完整性，与金融高可靠子集重叠）-----
+  hicpp-invalid-access-moved,
+  hicpp-new-delete-operators,
+  hicpp-exception-baseclass,
+  -hicpp-no-array-decay,
+  -hicpp-named-parameter,
+  -hicpp-uppercase-literal-suffix,
+
+  # ----- misc / modernize 现代C++特性 / performance 性能优化 / readability代码可读性 -----
+  misc-*,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-anonymous-namespace,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-using,
+  modernize-return-braced-init-list,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  performance-*,
+  -performance-enum-size,
+  -performance-avoid-endl,
+  readability-container-size-empty,
+  readability-redundant-smartptr-get,
+  readability-redundant-string-init,
+  readability-simplify-boolean-expr,
+  readability-inconsistent-declaration-parameter-name,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*'
+FormatStyle: file

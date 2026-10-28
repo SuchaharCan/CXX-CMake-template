@@ -1,0 +1,169 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 4, "minor": 1, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (build/ + Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CXX_ENABLE_CCACHE": "ON",
+        "CXX_ENABLE_SANITIZERS": "OFF",
+        "CXX_ENABLE_GTEST": "ON",
+        "CXX_ENABLE_CLANG_TIDY": "ON",
+        "CXX_ENABLE_CLANG_FORMAT": "ON",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug + ASan/UBSan",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-Og -g",
+        "CXX_ENABLE_CCACHE": "ON",
+        "CXX_ENABLE_SANITIZERS": "ON",
+        "CXX_SANITIZER": "address,undefined",
+        "CXX_ALLOCATOR": "system",
+        "CXX_ENABLE_GTEST": "ON",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Debug + TSan",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CXX_ENABLE_SANITIZERS": "ON",
+        "CXX_SANITIZER": "thread",
+        "CXX_ALLOCATOR": "system",
+        "CXX_ENABLE_CLANG_TIDY": "OFF",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CXX_ENABLE_CCACHE": "ON",
+        "CXX_ENABLE_SANITIZERS": "OFF",
+        "CXX_USE_LLD": "ON",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "libFuzzer + ASan",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CXX_ENABLE_FUZZERS": "ON",
+        "CXX_ENABLE_SANITIZERS": "OFF",
+        "CXX_ALLOCATOR": "system",
+        "CXX_ENABLE_CLANG_TIDY": "OFF",
+        "CXX_ENABLE_CLANG_FORMAT": "OFF",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage (llvm-cov)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CXX_ENABLE_COVERAGE": "ON",
+        "CXX_ENABLE_SANITIZERS": "OFF",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "iwyu",
+      "displayName": "IWYU + include-cleaner (header hygiene)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/iwyu",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CXX_ENABLE_IWYU": "ON",
+        "CXX_ENABLE_INCLUDE_CLEANER": "ON",
+        "CXX_ENABLE_CLANG_TIDY": "ON",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "safety-lint",
+      "displayName": "JPL-inspired tidy profile (NOT certified)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/safety",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CXX_SAFETY_LINT": "ON",
+        "CXX_ENABLE_CLANG_TIDY": "ON",
+        "CXX_ENABLE_SANITIZERS": "OFF",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "docs",
+      "displayName": "Enable docs targets (clang-doc + Doxygen)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CXX_ENABLE_DOCS": "ON",
+        "CXX_PREFERRED_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "gcc",
+      "displayName": "Homebrew g++",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CXX_PREFERRED_COMPILER": "g++",
+        "CXX_ENABLE_CCACHE": "ON",
+        "CXX_ENABLE_CLANG_TIDY": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "default", "configurePreset": "default" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "fuzz", "configurePreset": "fuzz" },
+    { "name": "coverage", "configurePreset": "coverage" },
+    { "name": "iwyu", "configurePreset": "iwyu" },
+    { "name": "safety-lint", "configurePreset": "safety-lint" },
+    { "name": "docs", "configurePreset": "docs" },
+    { "name": "gcc", "configurePreset": "gcc" }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

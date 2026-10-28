@@ -1,0 +1,31 @@
+# =============================================================================
+# cxx.palette — 模板统一调色板（单一事实来源，禁止在脚本里散落裸 ANSI）
+#
+# 格式: 名称 | 语义 | 终端 ANSI | grc 配色名
+#   - 终端 ANSI: 由 00_core_color.cmake 解析为 CXX_COLOR_<名称>
+#   - grc 配色名: 由 00_core_buildlog.cmake 生成 build/cxx_grc.conf
+#     （grc 仅支持 16 色 + 属性，256 色自动就近映射）
+#
+# 语义约定（每个颜色必须有明确含义）:
+#   red     错误 / 构建失败
+#   orange  严重警告 / 超时 / 需要人工介入
+#   yellow  警告
+#   green   成功 / OK
+#   grass   通过 / 次级成功（子项检查通过）
+#   blue    依赖检测 / 第三方库
+#   purple  备注 / 语法检测（tidy/format）
+#   cyan    路径 / 普通信息
+#   white   横幅 / 高亮详情
+#   gray    次要信息 / 长命令参数行
+# =============================================================================
+red     | 错误 / 构建失败       | 1,31     | bold red
+orange  | 严重警告 / 超时       | 38,5,214 | bold yellow
+yellow  | 警告                 | 1,33     | yellow
+green   | 成功 / OK            | 1,32     | bold green
+grass   | 通过 / 次级成功       | 38,5,48  | green
+blue    | 依赖检测 / 第三方库   | 1,94     | bold blue
+purple  | 备注 / 语法检测       | 1,35     | bold magenta
+cyan    | 路径 / 普通信息       | 1,96     | cyan
+white   | 横幅 / 高亮详情       | 1,97     | bold white
+gray    | 次要信息 / 参数行     | 90       | dark
+comment | 注释说明（just --list 等） | 38,2,223,174,0 | bold yellow

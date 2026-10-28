@@ -1,0 +1,93 @@
+# =============================================================================
+# justfile — single-exe-modules 构建自动化（just 为必选依赖，brew install just）
+# 用法: just            # 默认构建
+#       just --list     # 查看全部命令
+#       just configure -DCXX_ENABLE_GTEST=ON   # 传参覆盖
+# =============================================================================
+
+set shell := ["zsh", "-cu"]
+
+# ---- 必选系统环境变量（所有 recipe 生效，可用环境变量覆盖）----
+set export
+CXX_PREFERRED_COMPILER := env_var_or_default("CXX_PREFERRED_COMPILER", "clang++")
+CXX_BQLOG_MODE := env_var_or_default("CXX_BQLOG_MODE", "header")
+CLICOLOR_FORCE := "1"
+CXX_BUILD_COLOR_FORCE := "1"
+# just 原生颜色配置（仅此一项）：回显的配方命令行用黄色
+JUST_COMMAND_COLOR := "yellow"
+
+builddir := "build"
+
+# 默认：基础构建（cmake .. && cmake --build . -j9  启用代码格式自动化）
+default: build
+
+# 命令列表（注释以 yellow 显示）
+list:
+    just --list --color always | perl -ne 'if (/(.*?)(#.*)/) { ($a,$c)=($1,$2); $c =~ s/\e\[[0-9;]*m//g; print "$a\e[1;33m$c\e[0m\n"; } else { print; }'
+
+# 打印必选系统环境变量
+env:
+    @echo "CXX_PREFERRED_COMPILER  = {{CXX_PREFERRED_COMPILER}}"
+    @echo "CXX_BQLOG_MODE          = {{CXX_BQLOG_MODE}}"
+    @echo "CLICOLOR_FORCE          = 1"
+    @echo "CXX_BUILD_COLOR_FORCE   = 1"
+
+# 配置（Ninja + RelWithDebInfo；追加参数直接传 cmake）
+configure *ARGS:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{ARGS}}
+
+# 基础构建
+build: configure
+    @if grep -q '^CXX_ENABLE_CLANG_FORMAT:BOOL=ON' {{builddir}}/CMakeCache.txt; then just fmt; else echo "clang-format disabled, skip auto-fmt"; fi
+    cmake --build {{builddir}} -j9
+
+# 源码自动格式化（先精准检测 src/ 下源码，再 clang-format -i）
+fmt:
+    find src -type f \( -name '*.cxx' -o -name '*.hxx' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.cppm' \) -exec clang-format -i --style=file:cmake/.clang-format {} +
+
+# 详细构建（所有命令逐参数换行显示，便于锁定参数）
+verbose: configure
+    cmake --build {{builddir}} -j9 --verbose
+
+# 语法检测（clang-tidy + clang-format）
+check: configure
+    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} --target tidy-check
+    cmake --build {{builddir}} --target syntax-check
+
+# 单元测试（自动开启 GTest）
+test:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_ENABLE_GTEST=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    cmake --build {{builddir}} --target Ticket_tests -j9
+    ctest --test-dir {{builddir}} --output-on-failure
+
+# 注释文档生成（clang-doc + Doxygen 双后端）
+docs:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_ENABLE_DOCS=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    cmake --build {{builddir}} --target docs
+
+# 覆盖率（llvm-cov）
+coverage:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_COVERAGE=ON -DCXX_ENABLE_FUZZERS=OFF
+    cmake --build {{builddir}} -j9
+
+# 微基准冒烟
+bench: configure
+    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} --target run-bench
+
+# libFuzzer 冒烟
+fuzz:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_FUZZERS=ON -DCXX_ENABLE_COVERAGE=OFF
+    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} --target run-fuzz
+
+# IWYU + include-cleaner
+iwyu:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    cmake --build {{builddir}} -j9
+    @if cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check 不可用（工具有缺失）— 跳过"; fi
+
+# 清理构建目录
+clean:
+    cmake -E remove_directory {{builddir}}
