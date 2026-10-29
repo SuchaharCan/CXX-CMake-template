@@ -1,0 +1,27 @@
+CompileFlags:
+  CompilationDatabase: build/
+  Add:
+    - "-Wall"
+    - "-Wextra"
+    - "-Wno-error"
+  Remove:
+    - "-Werror"
+
+Diagnostics:
+  # Modules: classic include-cleaner on .cppm is noisy / incomplete.
+  # Enable Strict only when editing ScenarioLog.hxx/.cxx style TUs.
+  UnusedIncludes: None
+  MissingIncludes: None
+  ClangTidy:
+    Add:
+      - performance-*
+      - bugprone-*
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+      - misc-include-cleaner
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true

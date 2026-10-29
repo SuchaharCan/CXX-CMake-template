@@ -1,0 +1,9 @@
+.git
+.github
+.ci-logs
+.deps-libcxx
+**/.DS_Store
+**/build
+**/build-*
+**/.cache
+**/log/*

@@ -3,7 +3,7 @@
 # ci/run-local-ci.sh — 在本机复现 GitHub Actions 矩阵
 # 用法：bash ci/run-local-ci.sh
 # 行为：
-#   - macOS：检查 Homebrew 依赖（不安装），运行两个模板的完整矩阵
+#   - macOS：检查 Homebrew 依赖（不安装），运行所有模板的完整矩阵
 #   - Linux：检查命令与版本；若存在 .deps-libcxx 则用于 modules
 #   - CI_FRESH_BUILD=1 / CCACHE_DISABLE=1，与 workflow 保持一致
 # 可通过 CI_JUST_RECIPES 覆盖命令集合

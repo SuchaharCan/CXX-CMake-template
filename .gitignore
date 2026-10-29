@@ -105,6 +105,7 @@ tsan.log*
 # ---> Tool caches & IDE
 .ci-logs/*
 !.ci-logs/.gitkeep
+.deps-libcxx/
 .cache/
 .ccache/
 .clangd/

@@ -3,7 +3,8 @@
 ## 设计
 
 - 自动发现仓库内所有**直接包含 `justfile`** 的模板目录（新增模板自动纳入）。
-- 每个模板执行：`env list build check test docs bench fuzz coverage iwyu verbose`。
+- 每个模板执行：`env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose`
+  （模板未定义的命令自动跳过）。
 - `clean` 不自动执行（会删除构建目录）；可用 `CI_JUST_RECIPES` 覆盖命令集合。
 - 任一命令失败会继续执行其余命令，结尾汇总失败项并返回非零退出码。
 - 日志会作为 Actions artifact 上传（7 天保留）。
@@ -12,7 +13,7 @@
 ## 工作流文件
 
 - `.github/workflows/template-matrix.yml`
-  - `linux`：`ubuntu-24.04`（apt/LLVM 23.1/clang 23 + libc++）
+  - `linux`：暂时 `if: false` 禁用（保留配置，恢复时删除该行）
   - `macos`：`macos-26`（GitHub 最新托管 macOS，arm64，Homebrew）
 - `ci/install-deps-ubuntu.sh` — Ubuntu 依赖安装（兼容 GitHub runner 的 sudo）
 - `ci/install-deps-macos.sh` — macOS 依赖安装/升级（cmake≥4.4.4、clang≥23.1 等）
@@ -78,7 +79,7 @@ runs-on: [self-hosted, macos-27]
 
 ## 依赖说明
 
-- Ubuntu：cmake≥4.4.4（**Kitware 官方二进制，不使用 Python/pip**）、clang 23.1 + libc++（apt.llvm.org，含运行库）、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen。
+- Ubuntu：cmake≥4.4.4（**Kitware 官方二进制，不使用 Python/pip**）、GCC 16（Ubuntu Toolchain PPA）、clang 23.1 + libc++（apt.llvm.org，含运行库）、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen。
 - **C++ 运行时策略**：
   - `single-exe-classic` 在 Linux 使用系统 **libstdc++**（与 apt 的 spdlog/fmt/gtest/benchmark 一致）；
   - `single-exe-modules` 需要 libc++（`import std` 使用 libc++ 的 std.cppm），CI 用

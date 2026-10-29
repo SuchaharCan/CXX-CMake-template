@@ -1,0 +1,33 @@
+# =============================================================================
+# cxx_highlight.rules — 构建输出高亮规则表（唯一维护点）
+#
+# 每行: 正则 | 调色板颜色名 | 匹配次数
+#   - 颜色名取自 cxx.palette（red/orange/yellow/green/grass/blue/purple/cyan/white/gray）
+#   - 匹配次数: once（只匹配首个）/ 省略 = more（全部匹配）
+#   - 正则不可包含竖线 |（保留为字段分隔符）
+#
+# 新增关键字只需在这里加一行，例如：
+#   \bgate\b | green          # “gate” 一词亮绿色显示
+# 由 00_core_buildlog.cmake 读取并生成 build/cxx_grc.conf（grcat 消费）。
+# =============================================================================
+^FAILED: | red | once
+\[code=[1-9][0-9]*\] | red | once
+^ninja: | red
+^\S+\[\d+\]: \*\*\* | red
+\berror: | red | once
+\bwarning: | yellow | once
+\bgate\b | green
+^\[[0-9]+/[0-9]+\] | green
+^\[[ ]*[0-9]+%\] | green
+\bBuilding\b | green
+\bLinking\b | yellow
+\bexecutable\b | green
+(?<=executable )\S+ | red | once
+^[^:\s]+:\d+:\d+: | cyan | once
+^ {4}- | gray
+^/\S+$ | cyan
+#[^#]*$ | comment
+\bDoxygen\b | yellow
+\bclang-doc\b | yellow
+\bstd.cppm\b | yellow
+\b.cppm.o\b | yellow

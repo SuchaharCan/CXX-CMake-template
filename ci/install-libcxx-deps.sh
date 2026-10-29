@@ -17,7 +17,9 @@ if [ -f "${PREFIX}/.installed" ]; then
 fi
 cd "$SRC"
 
-CLANG_ROOT="/usr/lib/llvm-23"
+LLVM_VERSION="${LLVM_VERSION:-23}"
+GITHUB_PROXY="${GITHUB_PROXY:-}"
+CLANG_ROOT="/usr/lib/llvm-${LLVM_VERSION}"
 LINK_FLAGS="-stdlib=libc++ -L${CLANG_ROOT}/lib"
 COMMON=(
   -G Ninja
@@ -32,7 +34,14 @@ COMMON=(
 
 fetch() {
   local name="$1" url="$2"
-  curl -fsSL -o "${name}.tar.gz" "$url"
+  local request_url="$url"
+  if [ -n "$GITHUB_PROXY" ]; then
+    request_url="${GITHUB_PROXY%/}/${url}"
+  fi
+  echo "download: ${request_url}"
+  curl -fL --silent --show-error \
+    --retry 3 --retry-delay 2 --connect-timeout 20 \
+    -o "${name}.tar.gz" "$request_url"
   tar -xzf "${name}.tar.gz"
 }
 

@@ -1,13 +1,29 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ci/install-deps-ubuntu.sh — GitHub Actions（ubuntu-24.04）依赖安装
+# ci/install-deps-ubuntu.sh — Ubuntu 24.04 依赖安装
 # 兼容 root（容器）与 GitHub runner（非 root + passwordless sudo）。
-# 安装：cmake≥4.4.4 / clang++ 23.1 / libc++ / ninja / just / grc
+# 安装：cmake≥4.4.4 / gcc 16 / clang++ 23.1 / libc++ / ninja / just / grc
 #       / spdlog / fmt / gtest / benchmark / doxygen / ccache
 # bqlog：官方方式 brew install bqlog（Linux 使用 Linuxbrew）；
 # 无 Linuxbrew 时模板 warning 并跳过（可选依赖，非阻断）。
 # =============================================================================
 set -euo pipefail
+
+GCC_VERSION="${GCC_VERSION:-16}"
+LLVM_VERSION="${LLVM_VERSION:-23}"
+GITHUB_PROXY="${GITHUB_PROXY:-}"
+
+download_github() {
+  local url="$1" output="$2"
+  local request_url="$url"
+  if [ -n "$GITHUB_PROXY" ]; then
+    request_url="${GITHUB_PROXY%/}/${url}"
+  fi
+  echo "download: ${request_url}"
+  curl -fL --silent --show-error \
+    --retry 3 --retry-delay 2 --connect-timeout 20 \
+    -o "$output" "$request_url"
+}
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
@@ -17,7 +33,15 @@ export DEBIAN_FRONTEND=noninteractive
 
 $SUDO apt-get update
 $SUDO apt-get install -y --no-install-recommends \
-  ca-certificates curl git xz-utils build-essential ninja-build ccache \
+  ca-certificates curl software-properties-common
+
+# GCC 16 不在 Ubuntu 24.04 官方仓库中；使用 Ubuntu Toolchain PPA。
+$SUDO add-apt-repository -y ppa:ubuntu-toolchain-r/test
+$SUDO apt-get update
+
+$SUDO apt-get install -y --no-install-recommends \
+  git xz-utils build-essential gcc-${GCC_VERSION} g++-${GCC_VERSION} \
+  ninja-build ccache \
   python3 zsh pkg-config libspdlog-dev libfmt-dev libgtest-dev libbenchmark-dev \
   doxygen
 
@@ -27,6 +51,16 @@ $SUDO apt-get install -y --no-install-recommends grc || echo "warn: grc unavaila
 echo "info: IWYU 未安装（可选工具，just iwyu 将降级跳过）"
 
 # ---- CMake ≥4.4.4（官方二进制，不依赖 Python/pip）----
+CASE_ARCH="$(dpkg --print-architecture)"
+case "${CASE_ARCH}" in
+  amd64) CMAKE_ARCH="x86_64"; JUST_ARCH="x86_64" ;;
+  arm64) CMAKE_ARCH="aarch64"; JUST_ARCH="aarch64" ;;
+  *)
+    echo "error: unsupported Debian architecture: ${CASE_ARCH}" >&2
+    exit 1
+    ;;
+esac
+
 _cmake_need=1
 if command -v cmake >/dev/null 2>&1; then
   _cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
@@ -36,13 +70,14 @@ if command -v cmake >/dev/null 2>&1; then
 fi
 if [ "$_cmake_need" -eq 1 ]; then
   CMAKE_VERSION_PIN="${CMAKE_VERSION_PIN:-4.4.5}"
-  CMAKE_TARBALL="cmake-${CMAKE_VERSION_PIN}-linux-x86_64.tar.gz"
-  curl -fsSL -o "/tmp/${CMAKE_TARBALL}" \
-    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_PIN}/${CMAKE_TARBALL}"
+  CMAKE_TARBALL="cmake-${CMAKE_VERSION_PIN}-linux-${CMAKE_ARCH}.tar.gz"
+  download_github \
+    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_PIN}/${CMAKE_TARBALL}" \
+    "/tmp/${CMAKE_TARBALL}"
   $SUDO mkdir -p /opt
   $SUDO tar -xzf "/tmp/${CMAKE_TARBALL}" -C /opt
   for tool in cmake ctest cpack; do
-    $SUDO ln -sf "/opt/cmake-${CMAKE_VERSION_PIN}-linux-x86_64/bin/${tool}" \
+    $SUDO ln -sf "/opt/cmake-${CMAKE_VERSION_PIN}-linux-${CMAKE_ARCH}/bin/${tool}" \
       "/usr/local/bin/${tool}"
   done
 fi
@@ -57,33 +92,42 @@ if command -v just >/dev/null 2>&1; then
   fi
 fi
 if [ "$_just_need" -eq 1 ]; then
-  curl -fsSL -o /tmp/just.tar.gz \
-    "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+  download_github \
+    "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${JUST_ARCH}-unknown-linux-musl.tar.gz" \
+    "/tmp/just.tar.gz"
   $SUDO tar -xzf /tmp/just.tar.gz -C /usr/local/bin just
 fi
 
 # ---- clang 23.1（apt.llvm.org）----
-if ! command -v clang++-23 >/dev/null 2>&1; then
+if ! command -v "clang++-${LLVM_VERSION}" >/dev/null 2>&1; then
   curl -fsSL -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-  $SUDO bash /tmp/llvm.sh 23
+  $SUDO bash /tmp/llvm.sh "${LLVM_VERSION}"
 fi
 $SUDO apt-get install -y --no-install-recommends \
-  clang-tools-23 libc++-23-dev libc++abi-23-dev
+  clang-tools-${LLVM_VERSION} llvm-${LLVM_VERSION} lld-${LLVM_VERSION} \
+  lldb-${LLVM_VERSION} libc++-${LLVM_VERSION}-dev \
+  libc++abi-${LLVM_VERSION}-dev
 # libc++ 运行库（-stdlib=libc++ 链接 -pthread 检查所必需）
 $SUDO apt-get install -y --no-install-recommends libc++1 libc++abi1 \
   || echo "warn: libc++ runtime package name mismatch; check apt.llvm.org"
-$SUDO apt-get install -y --no-install-recommends llvm-libunwind1 libunwind-23-dev \
+$SUDO apt-get install -y --no-install-recommends \
+  llvm-libunwind1 libunwind-${LLVM_VERSION}-dev \
   || echo "warn: libunwind package name mismatch; check apt.llvm.org"
-$SUDO apt-get install -y --no-install-recommends clang-format-23 clang-tidy-23 \
-  || echo "warn: clang-format-23/clang-tidy-23 unavailable (use clang-tools-23 binaries)"
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang   /usr/local/bin/clang
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang++ /usr/local/bin/clang++
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang-scan-deps /usr/local/bin/clang-scan-deps
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang-format /usr/local/bin/clang-format
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang-tidy   /usr/local/bin/clang-tidy
-$SUDO ln -sf /usr/lib/llvm-23/bin/clang-doc    /usr/local/bin/clang-doc
-$SUDO ln -sf /usr/lib/llvm-23/bin/llvm-ar      /usr/local/bin/llvm-ar
-$SUDO ln -sf /usr/lib/llvm-23/bin/llvm-ranlib  /usr/local/bin/llvm-ranlib
+$SUDO apt-get install -y --no-install-recommends \
+  clang-format-${LLVM_VERSION} clang-tidy-${LLVM_VERSION} \
+  || echo "warn: clang-format/clang-tidy unavailable (use clang-tools binaries)"
+$SUDO ln -sfn /usr/bin/gcc-${GCC_VERSION} /usr/local/bin/gcc
+$SUDO ln -sfn /usr/bin/g++-${GCC_VERSION} /usr/local/bin/g++
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang   /usr/local/bin/clang
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang++ /usr/local/bin/clang++
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang-scan-deps /usr/local/bin/clang-scan-deps
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang-format /usr/local/bin/clang-format
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang-tidy   /usr/local/bin/clang-tidy
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/clang-doc    /usr/local/bin/clang-doc
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-ar      /usr/local/bin/llvm-ar
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-ranlib  /usr/local/bin/llvm-ranlib
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-cov     /usr/local/bin/llvm-cov
+$SUDO ln -sfn /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-profdata /usr/local/bin/llvm-profdata
 
 # ---- bqlog（官方推荐 brew install bqlog；Linux 使用 Linuxbrew）----
 BREW_BIN=""
@@ -115,6 +159,7 @@ echo "libc++ -pthread link: ok"
 
 # ---- 版本自检 ----
 cmake --version | head -1
+g++ --version | head -1
 clang++ --version | head -1
 just --version
 ninja --version

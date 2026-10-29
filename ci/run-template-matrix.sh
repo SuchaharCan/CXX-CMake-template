@@ -13,7 +13,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RECIPES="${CI_JUST_RECIPES:-env list build check test docs bench fuzz coverage iwyu verbose}"
+RECIPES="${CI_JUST_RECIPES:-env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose}"
 LOGDIR="${CI_LOG_DIR:-${ROOT}/.ci-logs}"
 mkdir -p "$LOGDIR"
 
