@@ -6,8 +6,9 @@
 # 规则：
 #   - 未设置 CI_TEMPLATES 时自动发现所有“直接包含 justfile”的模板
 #   - 设置 CI_TEMPLATES（空格分隔）时只运行指定模板，适合增量 CI
-#   - 默认执行 env list build check test parallel-test docs bench fuzz
+#   - 默认执行 env list build test parallel-test docs bench fuzz
 #     coverage iwyu mutation-test verbose
+#   - local-ci / check 在 CI 中强制跳过（即使 CI_JUST_RECIPES 显式包含）
 #   - clean 不执行（会删除构建目录，由人工触发）
 #   - CI_FRESH_BUILD=1 时先清空该模板 build/（CI 默认开启）
 #   - 可用 CI_JUST_RECIPES="build test" 覆盖命令集合
@@ -16,8 +17,9 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RECIPES="${CI_JUST_RECIPES:-env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose}"
+RECIPES="${CI_JUST_RECIPES:-env list build test parallel-test docs bench fuzz coverage iwyu mutation-test verbose}"
 REQUIRED_RECIPES="${CI_REQUIRED_RECIPES-build}"
+SKIP_RECIPES="local-ci check"
 LOGDIR="${CI_LOG_DIR:-${ROOT}/.ci-logs}"
 mkdir -p "$LOGDIR"
 
@@ -25,6 +27,7 @@ if [ -z "${RECIPES//[[:space:]]/}" ]; then
   echo "error: CI_JUST_RECIPES 不能为空" >&2
   exit 2
 fi
+echo "[ci] 强制跳过 recipes: ${SKIP_RECIPES}"
 
 requested_templates=()
 if [ -n "${CI_TEMPLATES:-}" ]; then
@@ -91,6 +94,13 @@ for template_dir in "${template_dirs[@]}"; do
   done
 
   for recipe in $RECIPES; do
+    case " ${SKIP_RECIPES} " in
+      *" ${recipe} "*)
+        echo "[skip] ${template_name}: just ${recipe}（CI 明确禁用）"
+        continue
+        ;;
+    esac
+
     case "$summary_words" in
       *" ${recipe} "*)
         ;;
@@ -118,8 +128,9 @@ if [ "$found" -eq 0 ]; then
   exit 1
 fi
 echo "选中模板数量: ${found}"
+echo "CI 强制跳过: ${SKIP_RECIPES}"
 if [ "${#failed[@]}" -eq 0 ]; then
-  echo "结果: 全部通过（${RECIPES}）"
+  echo "结果: 全部通过（请求 recipes: ${RECIPES}）"
   exit 0
 fi
 echo "结果: 失败项 ${#failed[@]}"

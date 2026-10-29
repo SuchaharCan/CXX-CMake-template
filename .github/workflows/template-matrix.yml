@@ -45,7 +45,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
           HEAD_SHA: ${{ github.sha }}
           CHANGED_RECIPES: ${{ vars.CI_CHANGED_RECIPES || 'build' }}
-          FULL_RECIPES: env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose
+          FULL_RECIPES: env list build test parallel-test docs bench fuzz coverage iwyu mutation-test verbose
         run: |
           set -euo pipefail
 

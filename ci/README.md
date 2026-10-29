@@ -10,8 +10,10 @@
   `.github/workflows/template-matrix.yml`、`.github/actions/**` 属于共享
   CI，变更时安全回退为构建全部模板。`ci/README.md` 等纯文档不触发构建。
 - `workflow_dispatch` 保留全量模式，对全部模板执行：
-  `env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose`
+  `env list build test parallel-test docs bench fuzz coverage iwyu mutation-test verbose`
   （模板未定义的命令自动跳过）。
+- `just local-ci` 和 `just check` 在 CI 矩阵中强制跳过；即使
+  `CI_JUST_RECIPES` 或 `CI_CHANGED_RECIPES` 误包含这两个 recipe，也不会执行。
 - 增量模式始终要求模板定义 `build` recipe；不会因为命令未定义而被静默跳过，
   从而保证“成功”代表模板至少完成了一次编译。
 - `clean` 不自动执行（会删除构建目录）；可用 `CI_JUST_RECIPES` 覆盖命令集合。
