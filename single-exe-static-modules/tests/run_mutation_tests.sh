@@ -22,7 +22,7 @@ run_killing_test() {
   cmake -S "$dir" -B "$dir/build-mutation" -G Ninja \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCXX_ENABLE_GTEST=ON \
-    -DCXX_ENABLE_CCACHE=OFF >/dev/null
+    -DCXX_ENABLE_CCACHE=ON >/dev/null
   local jobs
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
   cmake --build "$dir/build-mutation" --target static_modules_tests -j"$jobs" >/dev/null

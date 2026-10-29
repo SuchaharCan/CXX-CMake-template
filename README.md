@@ -283,16 +283,21 @@ plutil -p "$HOME/Library/Application Support/com.apple.container/apiserver/apise
 
 ## CI（GitHub Actions）
 
-- `.github/workflows/template-matrix.yml` — GitHub Actions：`ubuntu-24.04` + `macos-26` 双环境矩阵
-- `ci/run-template-matrix.sh` — 自动发现所有含 `justfile` 的模板，逐个执行 just 命令并汇总结果
+- `.github/workflows/template-matrix.yml` — push/PR 按 Git 差异只构建变更模板；
+  手动触发才执行全部模板的完整 recipe 矩阵
+- `ci/select-changed-templates.sh` — 将 Git 变更映射到模板目录；共享 CI 变更回退全量
+- `ci/run-template-matrix.sh` — 对选中的模板执行 just 命令并汇总结果
+- `ci/cleanup-job-workspace.sh` — Job 结束前清理工作树中的 build、日志与依赖产物
 - `ci/install-deps-ubuntu.sh` / `ci/install-deps-macos.sh` — 两平台依赖安装
 - 启用步骤、macOS 27 自建 runner 与本地验证见 [`ci/README.md`](ci/README.md)
 
 本地验证：
 
 ```bash
-bash ci/run-local-ci.sh
-bash ci/run-template-matrix.sh # 全量本地 CI（等价 workflow，自动清理 build、隔离日志）
+bash ci/run-local-ci.sh              # 全量（兼容原行为）
+bash ci/run-local-ci.sh --changed    # 只 build HEAD^..HEAD 影响的模板
+bash ci/run-local-ci.sh --all        # 明确执行全量
+bash ci/select-changed-templates.sh --base origin/master  # 查看增量模板
 # 快速子集
 CI_JUST_RECIPES="build test" bash ci/run-template-matrix.sh
 # 在模板目录内

@@ -5,17 +5,19 @@
 
 set shell := ["bash", "-cu"]
 set export
+unexport CCACHE_DISABLE
 
 CXX_PREFERRED_COMPILER := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
 CXX_STDLIB := env_var_or_default("CXX_STDLIB", "auto")
 CXX_BQLOG_MODE := "module"
+CXX_ENABLE_CCACHE := "ON"
 CLICOLOR_FORCE := "1"
 CXX_BUILD_COLOR_FORCE := "1"
 JUST_COMMAND_COLOR := "yellow"
 clang_format := env_var_or_default("CLANG_FORMAT", "clang-format")
 cxx_compiler := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
 cxx_stdlib := env_var_or_default("CXX_STDLIB", "auto")
-toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib
+toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib + " -DCXX_ENABLE_CCACHE=ON"
 
 builddir := "build"
 
@@ -30,7 +32,13 @@ env:
     @echo "CXX_PREFERRED_COMPILER  = {{CXX_PREFERRED_COMPILER}}"
     @echo "CXX_STDLIB              = {{CXX_STDLIB}}"
     @echo "CXX_BQLOG_MODE          = module"
+    @echo "CXX_ENABLE_CCACHE       = {{CXX_ENABLE_CCACHE}}"
     @echo "CXX_BUILD_COLOR_FORCE   = 1"
+
+# 单独的 ccache 缓存使用统计区段
+ccache-stats:
+    @printf '\n\033[1;33m━━━━━━━━━━━━━━━━━━━━  ccache 缓存使用统计  ━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+    @if command -v ccache >/dev/null 2>&1; then ccache --show-stats --verbose; else echo "ccache 未安装，无法显示缓存统计"; fi
 
 # 配置（auto 在 macOS = clang++ + libc++）
 configure *ARGS:
@@ -40,11 +48,13 @@ configure *ARGS:
 build: configure
     @if grep -q '^CXX_ENABLE_CLANG_FORMAT:BOOL=ON' {{builddir}}/CMakeCache.txt; then just fmt; else echo "clang-format disabled, skip auto-fmt"; fi
     cmake --build {{builddir}} -j9
+    @just ccache-stats
 
 # 显式 clang++ + libc++（本模板唯一支持的工具链组合）
 build-clang:
-    CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++
+    CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
     cmake --build build/clang -j9
+    @just ccache-stats
 
 # 源码自动格式化（含 .cppm）
 fmt:
@@ -55,27 +65,33 @@ check: configure
     cmake --build {{builddir}} -j9
     @if cmake --build {{builddir}} --target help | grep -q "tidy-check"; then cmake --build {{builddir}} --target tidy-check; else echo "tidy-check skipped (module-only targets)"; fi
     cmake --build {{builddir}} --target syntax-check
+    @just ccache-stats
 
 # 单元测试（含边界 + 并行测试）
 test:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON -DCXX_ENABLE_CCACHE=OFF
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
     cmake --build {{builddir}} --target static_modules_tests -j9
     ctest --test-dir {{builddir}} --output-on-failure
+    @just ccache-stats
 
 # CTest 并行执行 + 线程级并行测试
 parallel-test:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON -DCXX_ENABLE_CCACHE=OFF
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
     cmake --build {{builddir}} --target static_modules_tests -j9
     ctest --test-dir {{builddir}} -j8 --output-on-failure
+    @just ccache-stats
 
 # 注释文档生成（clang-doc + Doxygen 双后端；设计文档见 docs/DESIGN_DOC.md）
 docs:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_ENABLE_CCACHE=OFF
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON
     cmake --build {{builddir}} --target docs
+    @bash "{{justfile_directory()}}/cmake/report_docs_links.sh" "{{builddir}}"
+    @just ccache-stats
 
 # 变异测试：两个 mutant 必须被测试杀死
 mutation-test:
     bash tests/run_mutation_tests.sh
+    @just ccache-stats
 
 # 本地复现 GitHub Actions（macOS）
 local-ci:

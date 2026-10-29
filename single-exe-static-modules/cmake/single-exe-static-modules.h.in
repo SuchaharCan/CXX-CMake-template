@@ -1,0 +1,10 @@
+// Generated from cmake/single-exe-static-modules.h.in by configure_file(@ONLY).
+#ifndef CXX_SINGLE_EXE_STATIC_MODULES_CONFIG_HXX
+#define CXX_SINGLE_EXE_STATIC_MODULES_CONFIG_HXX
+
+#define CMakeTutorialStep1_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define CMakeTutorialStep1_VERSION_MINOR @PROJECT_VERSION_MINOR@
+
+#define STR_TEST "@STR_TEST@"
+
+#endif

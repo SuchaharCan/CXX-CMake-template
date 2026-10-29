@@ -46,11 +46,25 @@ cxx_set_lint_sources(
 # 本模板是纯模块 TU；clang-tidy 不支持 CMake @modmap，tidy-check 不扫描模块
 set(CXX_TIDY_PLAIN_SOURCES "" CACHE STRING "Plain TU sources for tidy-check" FORCE)
 cxx_phase_variables()
+
+if(CXX_SHOW_CMAKE_CONFIG)
+  cxx_sep("CMake 配置")
+endif()
+configure_file(
+  cmake/single-exe-static-modules.h.in
+  CMakeTutorialConfig.hxx
+  @ONLY
+)
+if(CXX_SHOW_CMAKE_CONFIG)
+  cxx_msg(grass "configure_file → CMakeTutorialConfig.hxx")
+endif()
+
 cxx_sep("构建独立静态模块")
 
 # ---- 独立静态模块 ----
 cxx_add_module(interface_log modules/interface_log/include/InterfaceLog.cppm)
 target_include_directories(interface_log PUBLIC
+  "${PROJECT_BINARY_DIR}"
   "${PROJECT_SOURCE_DIR}/modules/interface_log/include")
 cxx_apply_static_module_defaults(interface_log)
 cxx_link_bqlog(interface_log)   # module 模式：import bq.log

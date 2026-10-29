@@ -41,6 +41,25 @@ just check                 # clang-format（模块 TU 不做 clang-tidy）
 just local-ci              # 本机复现 GitHub Actions macOS 矩阵
 ```
 
+所有会编译的 recipe（含测试、文档和变异测试）都启用 ccache，并在末尾打印
+独立缓存命中率；也可运行 `just ccache-stats`。`just docs` 会以粗体黄色输出
+Doxygen 与 clang-doc 的可点击 `index.html` 链接。
+
+配置日志由两个 CMake BOOL 变量控制，模板头文件输入为
+`cmake/single-exe-static-modules.h.in`：
+
+| 变量 | 默认值 | 控制内容 |
+| --- | --- | --- |
+| `CXX_SHOW_CMAKE_CONFIG` | `OFF` | `CMake 配置` 分段、`configure_file` 消息、`Performing Test ...` warning 探测 |
+| `CXX_SHOW_CMAKE_VARIABLES` | `ON` | `=== 2. CMake 变量 ===` 分组变量清单 |
+
+```bash
+just configure -DCXX_SHOW_CMAKE_CONFIG=ON
+just configure -DCXX_SHOW_CMAKE_VARIABLES=OFF
+```
+
+配置后生成 `build/CMakeTutorialConfig.hxx`；开关只控制日志，不跳过文件生成。
+
 CLI：
 
 ```bash
@@ -64,10 +83,19 @@ CLI：
 
 ## CI
 
-GitHub Actions 暂时只保留 macOS Job；Linux-Ubuntu Job 已在 `.github/workflows/template-matrix.yml` 中用 `if: false` 暂时禁用。workflow 会自动发现本模板的 `justfile` 并执行全量命令。
+GitHub Actions 暂时只保留 macOS Job；Linux-Ubuntu Job 已在
+`.github/workflows/template-matrix.yml` 中用 `if: false` 暂时禁用。
+普通 push/PR 只构建变更模板，手动触发才执行完整 recipe 矩阵。
 
 本地复现：
 
 ```bash
-bash ci/run-local-ci.sh
+bash ci/run-local-ci.sh --changed
+bash ci/run-local-ci.sh --all
 ```
+
+## 本轮变更记录（2026-10-29）
+
+- **增量 CI**：push/PR 只构建差异涉及的模板，手动触发仍运行完整矩阵；共享 CI 变更回退全量。
+- **配置输出**：头文件输入改为 `cmake/single-exe-static-modules.h.in`，补齐 `configure_file`；新增 `CXX_SHOW_CMAKE_CONFIG=OFF` 与 `CXX_SHOW_CMAKE_VARIABLES=ON` 两个日志开关。
+- **文档与缓存**：`just docs` 输出两条粗体黄色可点击 HTML 链接；测试、文档和变异测试均启用 ccache 并打印统计；Actions Job 结束前清理工作树生成物。

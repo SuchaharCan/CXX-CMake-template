@@ -53,6 +53,27 @@ just coverage   # llvm-cov
 just iwyu       # IWYU + include-cleaner
 ```
 
+所有会编译的 recipe 都强制启用 ccache，并在末尾输出独立的缓存命中率统计；
+也可随时运行 `just ccache-stats` 查看。`just docs` 会输出粗体黄色的
+Doxygen / clang-doc 可点击 `index.html` 链接。
+
+### 2.1 CMake 配置输出开关
+
+模板头文件输入为 `cmake/single-exe-modules.h.in`，配置后生成
+`build/CMakeTutorialConfig.hxx`。配置日志由两个 CMake BOOL 变量控制：
+
+| 变量 | 默认值 | 控制内容 |
+| --- | --- | --- |
+| `CXX_SHOW_CMAKE_CONFIG` | `OFF` | `CMake 配置` 分段、`configure_file` 消息、`Performing Test ...` warning 探测 |
+| `CXX_SHOW_CMAKE_VARIABLES` | `ON` | `=== 2. CMake 变量 ===` 分组变量清单 |
+
+```bash
+just configure -DCXX_SHOW_CMAKE_CONFIG=ON
+just configure -DCXX_SHOW_CMAKE_VARIABLES=OFF
+```
+
+`configure_file` 本身始终执行，开关只控制日志输出。
+
 原生 cmake：`cd build && cmake -G Ninja .. && cmake --build . && ./Ticket`
 
 ## 3. 依赖与版本门禁
@@ -88,6 +109,9 @@ Linux 本地复现：`CI_LOCAL_BUILD_DEPS=1 just local-ci`。
 |------|------|
 | 2026-10-28 | **v2 重构（对齐 single-exe-classic）**：cmake/ 分层 `00_core/10_core/9*_opt`；`import std` 改 CMake 原生（移除 Generator/StdlibConfig/StdModule/Modules/stdlib 手工编译）；cmake ≥4.4.4、clang ≥23.1；grc 着色 + 规则表；bqlog 三模式；justfile 全命令；GTest 默认 OFF；文档合并为 README |
 | 2026-10-28 | 清理无关文件（vcpkg.json、UserPresets.example、.pre-commit、源根 compile_commands.json、ARCHITECTURE.md）；`.clangd` 指向 `build/`；`.gitignore` 三分区 |
+| 2026-10-29 | **增量 CI**：push/PR 只构建差异涉及的模板，手动触发仍运行完整矩阵；共享 CI 变更回退全量 |
+| 2026-10-29 | **配置输出**：头文件输入改为 `cmake/single-exe-modules.h.in`；新增 `CXX_SHOW_CMAKE_CONFIG=OFF` 与 `CXX_SHOW_CMAKE_VARIABLES=ON` 两个日志开关 |
+| 2026-10-29 | **文档与缓存**：`just docs` 输出两条粗体黄色可点击 HTML 链接；编译 recipe 启用 ccache 并打印统计；Actions Job 结束前清理工作树生成物 |
 
 ## 6. 相关文档
 

@@ -21,6 +21,11 @@ set(CXX_CMAKE_MODULE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL
 set(CXX_APPLY_GATES "" CACHE INTERNAL "registered per-target gates (functions)" FORCE)
 set(CXX_FINISH_HOOKS "" CACHE INTERNAL "registered finish hooks (functions)" FORCE)
 
+option(CXX_SHOW_CMAKE_CONFIG
+       "Print CMake configure and compiler-probe detail messages" OFF)
+option(CXX_SHOW_CMAKE_VARIABLES
+       "Print grouped CMake variable values" ON)
+
 # -----------------------------------------------------------------------------
 # cxx_register_apply_gate(fn) — 可选模块注册 per-target 门禁（可扩展点）
 # -----------------------------------------------------------------------------
@@ -131,6 +136,10 @@ endfunction()
 # cxx_phase_variables() — 阶段 2：分组打印变量
 # -----------------------------------------------------------------------------
 function(cxx_phase_variables)
+  if(NOT CXX_SHOW_CMAKE_VARIABLES)
+    return()
+  endif()
+
   cxx_configure_phase("=== 2. CMake 变量 ===")
 
   cxx_var_group(green "工具链 Toolchain"
@@ -171,7 +180,7 @@ function(cxx_phase_variables)
   cxx_var_line(blue CXX_BQLOG_LIBRARY)
 
   cxx_var_group(cyan "项目基础 Project"
-    "根 CMakeLists.txt 的 project()/STR_TEST/add_executable；cmake/TutorialConfig.h.in")
+    "根 CMakeLists.txt 的 project()/STR_TEST/add_executable；cmake/single-exe-classic.h.in")
   cxx_var_line(cyan CMAKE_PROJECT_NAME)
   cxx_var_line(cyan PROJECT_NAME)
   cxx_var_line(cyan PROJECT_VERSION)
@@ -187,6 +196,8 @@ function(cxx_phase_variables)
   cxx_var_line(cyan CXX_LOG_DIR)
   cxx_var_line(cyan CXX_LOG_MAX_LINES)
   cxx_var_line(cyan CXX_BUILD_LOG_MAX_LINES)
+  cxx_var_line(cyan CXX_SHOW_CMAKE_CONFIG)
+  cxx_var_line(cyan CXX_SHOW_CMAKE_VARIABLES)
 
   cxx_var_group(purple "语法检测 Lint"
     "cmake/00_core_lint.cmake；cmake .. -DCXX_ENABLE_CLANG_TIDY= / -DCXX_ENABLE_CLANG_FORMAT=")

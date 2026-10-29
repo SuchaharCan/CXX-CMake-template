@@ -81,6 +81,10 @@ just iwyu       # IWYU + include-cleaner
 just verbose    # 详细构建（命令逐参数换行）
 ```
 
+所有会编译的 recipe 都强制启用 ccache，并在末尾输出独立的缓存命中率统计；
+也可随时运行 `just ccache-stats` 查看。`just docs` 在 clang-doc 完成后会以
+粗体黄色输出两条可点击链接，分别打开 Doxygen 和 clang-doc 的 `index.html`。
+
 > **目录约定**：`just` 系列命令直接在模板根目录执行（justfile 会自动定位 `build/` 并完成 `cmake ..` + `cmake --build`）。手动执行 cmake 时，先 `cd build` 进入构建目录，再 `cmake .. && cmake --build . -j9`。`just build` 在默认开启 clang-format 时会先自动执行 `clang-format -i` 格式化源码（先精准检测 `src/` 下的 `.cxx/.hxx/.cpp/.hpp`，再做格式自动化），确保 PRE_BUILD 的 dry-run 门禁不会因格式问题失败。
 
 ### 2.1 just 注释配色（yellow）
@@ -100,6 +104,23 @@ just() {
   fi
 }
 ```
+
+### 2.2 CMake 配置输出开关
+
+模板头文件输入为 `cmake/single-exe-classic.h.in`，配置后生成
+`build/CMakeTutorialConfig.hxx`。配置日志由两个 CMake BOOL 变量控制：
+
+| 变量 | 默认值 | 控制内容 |
+| --- | --- | --- |
+| `CXX_SHOW_CMAKE_CONFIG` | `OFF` | `CMake 配置` 分段、`configure_file` 消息、`Performing Test ...` warning 探测 |
+| `CXX_SHOW_CMAKE_VARIABLES` | `ON` | `=== 2. CMake 变量 ===` 分组变量清单 |
+
+```bash
+just configure -DCXX_SHOW_CMAKE_CONFIG=ON   # 查看详细配置与 warning 探测
+just configure -DCXX_SHOW_CMAKE_VARIABLES=OFF  # 隐藏分组变量清单
+```
+
+`configure_file` 本身始终执行，开关只控制日志输出。
 
 ### 原生 cmake
 
@@ -161,6 +182,9 @@ macOS 如需 g++ 需另建全套 libstdc++ 依赖，不属于默认模板能力�
 | 2026-10-28 | 清理无关文件：`vcpkg.json`、`CMakeUserPresets.json.example`、`.pre-commit-config.yaml`、源根 `compile_commands.json`（clangd 改用 `.clangd` 的 `CompilationDatabase: build/`）                                                                                     |
 | 2026-10-28 | 构建输出：绝对路径缩短 + `cd … &&` 命令链逐参数换行格式化                                                                                                                                                                                                          |
 | 2026-10-28 | 修复 brew 升级 llvm 后 `clang-scan-deps` 缓存失效（opt 软链自愈，见 `00_core_compiler.cmake`）                                                                                                                                                                     |
+| 2026-10-29 | **增量 CI**：push/PR 只构建差异涉及的模板，手动触发仍运行完整矩阵；共享 CI 变更回退全量 |
+| 2026-10-29 | **配置输出**：头文件输入改为 `cmake/single-exe-classic.h.in`；新增 `CXX_SHOW_CMAKE_CONFIG=OFF` 与 `CXX_SHOW_CMAKE_VARIABLES=ON` 两个日志开关 |
+| 2026-10-29 | **文档与缓存**：`just docs` 输出两条粗体黄色可点击 HTML 链接；编译 recipe 启用 ccache 并打印统计；Actions Job 结束前清理工作树生成物 |
 
 1. 着色增强 + 字符串匹配 维护方便cxx_highlight.rules 文件中维护
 

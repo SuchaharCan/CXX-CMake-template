@@ -42,10 +42,18 @@ set(STR_TEST "AirlineTicket C++23 modules")
 
 cxx_phase_variables()
 
-cxx_sep("CMake 配置")
+if(CXX_SHOW_CMAKE_CONFIG)
+  cxx_sep("CMake 配置")
+endif()
 
-configure_file(cmake/TutorialConfig.h.in CMakeTutorialConfig.hxx)
-cxx_msg(grass "configure_file → CMakeTutorialConfig.hxx")
+configure_file(
+  cmake/single-exe-modules.h.in
+  CMakeTutorialConfig.hxx
+  @ONLY
+)
+if(CXX_SHOW_CMAKE_CONFIG)
+  cxx_msg(grass "configure_file → CMakeTutorialConfig.hxx")
+endif()
 
 # ---- 业务源（模板使用者主要改这里）----
 set(CXX_SHARED_MODULES

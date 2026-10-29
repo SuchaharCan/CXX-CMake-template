@@ -2,10 +2,24 @@
 
 ## 设计
 
-- 自动发现仓库内所有**直接包含 `justfile`** 的模板目录（新增模板自动纳入）。
-- 每个模板执行：`env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose`
+- 自动发现仓库内**直接包含 `justfile`** 的模板目录，不维护模板白名单；
+  新增模板会自动纳入变更检测。
+- `push` / `pull_request` 只构建本次差异触及的模板，默认执行 `just build`，
+  不再运行所有模板和全部 recipe。
+- 模板目录内任一文件变更都会选中该模板；`ci/*.sh`、
+  `.github/workflows/template-matrix.yml`、`.github/actions/**` 属于共享
+  CI，变更时安全回退为构建全部模板。`ci/README.md` 等纯文档不触发构建。
+- `workflow_dispatch` 保留全量模式，对全部模板执行：
+  `env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose`
   （模板未定义的命令自动跳过）。
+- 增量模式始终要求模板定义 `build` recipe；不会因为命令未定义而被静默跳过，
+  从而保证“成功”代表模板至少完成了一次编译。
 - `clean` 不自动执行（会删除构建目录）；可用 `CI_JUST_RECIPES` 覆盖命令集合。
+- 增量 recipe 可用 Repository Variable `CI_CHANGED_RECIPES` 覆盖（默认 `build`）。
+- 所有会编译的 just recipe 固定传 `-DCXX_ENABLE_CCACHE=ON`；CI 使用
+  `actions/cache` 跨运行恢复 ccache，并在 recipe 末尾单独打印缓存命中率。
+- Job 最后执行 `ci/cleanup-job-workspace.sh`，清理 build、日志、依赖产物等
+  工作树生成物；源码和跨任务 ccache/工具链缓存保留。
 - 任一命令失败会继续执行其余命令，结尾汇总失败项并返回非零退出码。
 - 日志会作为 Actions artifact 上传（7 天保留）。
 - 每条命令输出保存到 `.ci-logs/<模板>-<命令>.log`；失败汇总会打印命令与末尾 30 行错误输出。
@@ -13,12 +27,15 @@
 ## 工作流文件
 
 - `.github/workflows/template-matrix.yml`
-  - `linux`：暂时 `if: false` 禁用（保留配置，恢复时删除该行）
-  - `macos`：`macos-26`（GitHub 最新托管 macOS，arm64，Homebrew）
+  - `detect`：拉取完整历史，按 push/PR 的 base/head 差异选择模板
+  - `linux`：暂时 `if: false` 禁用（恢复时改为判断选中模板非空）
+  - `macos`：仅在选中模板非空时运行；`macos-26`（arm64，Homebrew）
 - `ci/install-deps-ubuntu.sh` — Ubuntu 依赖安装（兼容 GitHub runner 的 sudo）
 - `ci/install-deps-macos.sh` — macOS 依赖安装/升级（cmake≥4.4.4、clang≥23.1 等）
 - `ci/install-libcxx-deps.sh` — Linux modules 专用的 libc++ 第三方依赖（spdlog/fmt/gtest/benchmark）
 - `ci/run-template-matrix.sh` — 模板矩阵执行器
+- `ci/select-changed-templates.sh` — Git 差异到模板目录的映射器
+- `ci/cleanup-job-workspace.sh` — Actions Job 完成前的安全工作区清理
 
 > `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
 > `CLANG_FORMAT` 环境变量（默认 `clang-format`）定位格式化工具；
@@ -28,11 +45,22 @@
 
 ```bash
 CI_DEPS_CHECK_ONLY=1 bash ci/install-deps-macos.sh   # macOS 只检查
-bash ci/run-local-ci.sh                              # 本机复现 GitHub Actions 全量矩阵
-just local-ci                                        # 同上（模板目录内）
-bash ci/run-template-matrix.sh                       # 全量矩阵
+bash ci/run-local-ci.sh                              # 本机全量矩阵（兼容原行为）
+bash ci/run-local-ci.sh --all                        # 明确执行全量矩阵
+bash ci/run-local-ci.sh --changed                    # 只 build HEAD^..HEAD 影响模板
+bash ci/run-local-ci.sh --changed origin/master      # 只 build 分支相对 master 的变更
+just local-ci                                        # 模板目录内运行全量矩阵
+
+bash ci/select-changed-templates.sh --all            # 列出全部模板
+bash ci/select-changed-templates.sh --base HEAD^     # 列出增量模板
+bash ci/run-template-matrix.sh                       # 未指定模板时运行全量
+CI_TEMPLATES="single-exe-classic" CI_JUST_RECIPES="build" \
+  bash ci/run-template-matrix.sh                     # 只构建一个模板
 CI_JUST_RECIPES="build test" bash ci/run-template-matrix.sh  # 快速子集
 ```
+
+`select-changed-templates.sh` 将模板名逐行写到 stdout，诊断信息写到 stderr；
+CI 中再由 workflow 转成一行，通过 `CI_TEMPLATES` 传给矩阵执行器。
 
 ## GitHub 上如何开启
 
@@ -51,7 +79,7 @@ git push -u origin master
 
 3. 打开仓库 **Actions** 标签：
    - 若是首次启用，点击 **I understand my workflows, go ahead and enable them**。
-   - 左侧选择 `Template Matrix CI`，可看到 `Linux` / `macOS` 两个 Job。
+   - 左侧选择 `Template Matrix CI`，可看到模板检测、`Linux` 和 `macOS` Job。
 
 4. 触发方式：
    - 向 `master`/`main` 推送，或创建/更新 Pull Request（自动触发）。
@@ -59,7 +87,7 @@ git push -u origin master
 
 5. 建议开启分支保护（可选）：**Settings → Branches → Add branch protection rule**，
    勾选 **Require status checks to pass before merging**，选择
-   `Linux / ubuntu-24.04` 与 `macOS / macos-26`。
+   `Detect changed templates` 与 `macOS / macos-26`。
 
 ## macOS 27 说明
 

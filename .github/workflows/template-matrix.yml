@@ -1,7 +1,10 @@
 # =============================================================================
 # GitHub Actions —— 模板矩阵 CI
 # 触发：push(master/main) / pull_request / 手动 workflow_dispatch
-# 动作：安装依赖 → 自动发现所有含 justfile 的模板 → 逐个执行 just 命令
+# 动作：按 Git 差异选择模板 → 安装依赖 → 只构建受影响模板
+#   - push / pull_request：只对变更模板执行 just build
+#   - ci/*.sh 或 workflow 变更：构建全部模板（共享基础设施回归）
+#   - workflow_dispatch：全部模板 + 完整 recipe 矩阵
 # 任务：Linux(ubuntu-24.04) + macOS(macos-26 arm64，GitHub 最新托管镜像)
 # =============================================================================
 name: Template Matrix CI
@@ -20,17 +23,89 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect:
+    name: Detect changed templates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      has_templates: ${{ steps.select.outputs.has_templates }}
+      templates: ${{ steps.select.outputs.templates }}
+      recipes: ${{ steps.select.outputs.recipes }}
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select templates
+        id: select
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          HEAD_SHA: ${{ github.sha }}
+          CHANGED_RECIPES: ${{ vars.CI_CHANGED_RECIPES || 'build' }}
+          FULL_RECIPES: env list build check test parallel-test docs bench fuzz coverage iwyu mutation-test verbose
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            templates="$(bash ci/select-changed-templates.sh --all)"
+            recipes="$FULL_RECIPES"
+            echo "[select] 手动触发：全部模板 + 完整 recipe 矩阵"
+          elif [ -z "$BASE_SHA" ] || [[ "$BASE_SHA" =~ ^0+$ ]] \
+            || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            templates="$(bash ci/select-changed-templates.sh --all)"
+            recipes="$CHANGED_RECIPES"
+            echo "[select] 无可比较基线：安全回退到全部模板"
+          else
+            templates="$(
+              bash ci/select-changed-templates.sh \
+                --base "$BASE_SHA" --head "$HEAD_SHA"
+            )"
+            recipes="$CHANGED_RECIPES"
+            echo "[select] 增量范围：${BASE_SHA}..${HEAD_SHA}"
+          fi
+
+          one_line_templates="$(
+            printf '%s\n' "$templates" \
+              | awk 'NF { printf "%s%s", separator, $0; separator = " " }'
+          )"
+          has_templates=false
+          [ -n "$one_line_templates" ] && has_templates=true
+
+          {
+            echo "has_templates=${has_templates}"
+            echo "templates=${one_line_templates}"
+            echo "recipes=${recipes}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 模板变更选择"
+            echo
+            echo "- 模板：\`${one_line_templates:-无}\`"
+            echo "- Recipes：\`${recipes}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean job workspace
+        if: always()
+        shell: bash
+        run: bash ci/cleanup-job-workspace.sh
+
   linux:
     name: Linux / ubuntu-24.04
-    # 暂时禁用 Linux-Ubuntu 编译流水；恢复时删除此 if
+    # 暂时禁用 Linux-Ubuntu 编译流水；恢复时把 if 改为
+    # needs.detect.outputs.has_templates == 'true'
+    needs: detect
     if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       CI_FRESH_BUILD: "1"
-      CCACHE_DISABLE: "1"
+      CI_TEMPLATES: ${{ needs.detect.outputs.templates }}
+      CI_JUST_RECIPES: ${{ needs.detect.outputs.recipes }}
       CLANG_FORMAT: /usr/local/bin/clang-format
-      CXX_LIBCXX_DEPS_PREFIX: ${{ github.workspace }}/.deps-libcxx
+      CXX_LIBCXX_DEPS_PREFIX: ${{ runner.temp }}/deps-libcxx
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,10 +113,18 @@ jobs:
       - name: Install dependencies
         run: bash ci/install-deps-ubuntu.sh
 
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-linux-
+
       - name: Cache libc++ dependencies
         uses: actions/cache@v4
         with:
-          path: .deps-libcxx
+          path: ${{ runner.temp }}/deps-libcxx
           key: libcxx-deps-linux-${{ hashFiles('ci/install-libcxx-deps.sh') }}
 
       - name: Build libc++ dependencies (modules)
@@ -66,8 +149,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Clean job workspace
+        if: always()
+        shell: bash
+        run: bash ci/cleanup-job-workspace.sh
+
   macos:
     name: macOS / ${{ matrix.os }}
+    needs: detect
+    if: ${{ needs.detect.outputs.has_templates == 'true' }}
     # GitHub 当前最新托管 macOS 为 26（arm64，标签 macos-26）。
     # 如需 macOS 27：在 macOS 27 机器注册 self-hosted runner（标签 macos-27），
     # 将 runs-on 改为 [self-hosted, macos-27]。
@@ -79,7 +169,8 @@ jobs:
         os: [macos-26]
     env:
       CI_FRESH_BUILD: "1"
-      CCACHE_DISABLE: "1"
+      CI_TEMPLATES: ${{ needs.detect.outputs.templates }}
+      CI_JUST_RECIPES: ${{ needs.detect.outputs.recipes }}
       CLANG_FORMAT: /opt/homebrew/opt/llvm/bin/clang-format
     steps:
       - name: Checkout
@@ -87,6 +178,14 @@ jobs:
 
       - name: Install dependencies (Homebrew)
         run: bash ci/install-deps-macos.sh
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-macos-
 
       - name: Run template matrix
         shell: bash
@@ -106,3 +205,8 @@ jobs:
             */log/cmake_configure.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Clean job workspace
+        if: always()
+        shell: bash
+        run: bash ci/cleanup-job-workspace.sh
