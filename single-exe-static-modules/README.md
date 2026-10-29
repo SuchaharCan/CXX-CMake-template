@@ -37,6 +37,7 @@ just test                  # 边界 + 并行 + 日志容量测试
 just parallel-test         # CTest -j8 + 线程并行测试
 just mutation-test         # 两个真实变异体必须被测试杀死
 just docs                  # 注释文档生成（clang-doc + Doxygen 双后端）
+just uml                   # C++ 内部函数调用/被调用关系图
 just check                 # clang-format（模块 TU 不做 clang-tidy）
 just local-ci              # 本机复现 GitHub Actions macOS 矩阵
 ```
@@ -44,6 +45,17 @@ just local-ci              # 本机复现 GitHub Actions macOS 矩阵
 所有会编译的 recipe（含测试、文档和变异测试）都启用 ccache，并在末尾打印
 独立缓存命中率；也可运行 `just ccache-stats`。`just docs` 会以粗体黄色输出
 Doxygen 与 clang-doc 的可点击 `index.html` 链接。
+
+`just uml` 使用 Doxygen + Graphviz 扫描 `src/` 和 `modules/`，生成函数级
+call/caller graph。入口为 `build/docs/doxygen/html/index.html`；打开任一带注释的
+函数声明即可查看它的调用关系。首次使用需安装：
+
+```bash
+brew install doxygen graphviz
+```
+
+这是函数调用图，不是严格 UML 时序图；项目当前使用 C++26 多模块，Doxygen 比
+`clang-uml` 对这套模块工具链的兼容性更稳定。
 
 配置日志由两个 CMake BOOL 变量控制，模板头文件输入为
 `cmake/single-exe-static-modules.h.in`：
@@ -99,3 +111,4 @@ bash ci/run-local-ci.sh --all
 - **增量 CI**：push/PR 只构建差异涉及的模板，手动触发仍运行完整矩阵；共享 CI 变更回退全量。
 - **配置输出**：头文件输入改为 `cmake/single-exe-static-modules.h.in`，补齐 `configure_file`；新增 `CXX_SHOW_CMAKE_CONFIG=OFF` 与 `CXX_SHOW_CMAKE_VARIABLES=ON` 两个日志开关。
 - **文档与缓存**：`just docs` 输出两条粗体黄色可点击 HTML 链接；测试、文档和变异测试均启用 ccache 并打印统计；Actions Job 结束前清理工作树生成物。
+- **函数依赖图**：Doxygen 开启 call/caller graph 与匿名命名空间提取，新增 `just uml`。

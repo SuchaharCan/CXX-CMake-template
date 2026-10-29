@@ -88,6 +88,12 @@ docs:
     @bash "{{justfile_directory()}}/cmake/report_docs_links.sh" "{{builddir}}"
     @just ccache-stats
 
+# C++ 内部函数调用/被调用关系图（Doxygen + Graphviz）
+uml:
+    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON
+    cmake --build {{builddir}} --target docs-doxygen
+    @printf '\n\033[1;33m函数调用关系图入口：%s/%s/docs/doxygen/html/index.html\033[0m\n' "{{justfile_directory()}}" "{{builddir}}"
+
 # 变异测试：两个 mutant 必须被测试杀死
 mutation-test:
     bash tests/run_mutation_tests.sh
