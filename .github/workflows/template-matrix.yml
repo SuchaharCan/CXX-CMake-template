@@ -105,7 +105,7 @@ jobs:
       CI_TEMPLATES: ${{ needs.detect.outputs.templates }}
       CI_JUST_RECIPES: ${{ needs.detect.outputs.recipes }}
       CLANG_FORMAT: /usr/local/bin/clang-format
-      CXX_LIBCXX_DEPS_PREFIX: ${{ runner.temp }}/deps-libcxx
+      # runner.temp 不可用于 Job 级 env；libc++ 前缀在相关 step 中设置
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,10 +128,14 @@ jobs:
           key: libcxx-deps-linux-${{ hashFiles('ci/install-libcxx-deps.sh') }}
 
       - name: Build libc++ dependencies (modules)
+        env:
+          CXX_LIBCXX_DEPS_PREFIX: ${{ runner.temp }}/deps-libcxx
         run: bash ci/install-libcxx-deps.sh
 
       - name: Run template matrix
         shell: bash
+        env:
+          CXX_LIBCXX_DEPS_PREFIX: ${{ runner.temp }}/deps-libcxx
         run: |
           set -o pipefail
           bash ci/run-template-matrix.sh 2>&1 | tee ci-matrix-linux.log
