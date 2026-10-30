@@ -178,6 +178,7 @@ function(cxx_phase_variables)
   cxx_var_line(blue CXX_BQLOG_LINK)
   cxx_var_line(blue CXX_BQLOG_INCLUDE_DIR)
   cxx_var_line(blue CXX_BQLOG_LIBRARY)
+  cxx_var_line(blue CXX_BQLOG_TARGET)
 
   cxx_var_group(cyan "项目基础 Project"
     "根 CMakeLists.txt 的 project()/STR_TEST/add_executable；cmake/single-exe-classic.h.in")

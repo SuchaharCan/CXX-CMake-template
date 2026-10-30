@@ -2,8 +2,9 @@
 
 > 本文件是模板的**权威设计说明**，同时被 Doxygen 用作 HTML 文档主页
 > （`docs/Doxyfile.in` 的 `USE_MDFILE_AS_MAINPAGE` 指向本文件）。
-> 生成自动化：`just docs`（clang-doc + Doxygen 双后端）。
-> 代码内注释与本文档互相补充：本文档讲"为什么"，代码注释讲"是什么"。
+>
+> > 生成自动化：`just docs`（clang-doc + Doxygen 双后端）。
+> > 代码内注释与本文档互相补充：本文档讲"为什么"，代码注释讲"是什么"。
 
 ## 1. 模板定位
 

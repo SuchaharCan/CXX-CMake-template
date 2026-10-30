@@ -140,13 +140,9 @@ function(cxx_deps_detect)
 endfunction()
 
 # -----------------------------------------------------------------------------
-# cxx_find_bqlog() — 头文件 + 库定位（pkg-config 优先，find_path/find_library 兜底）
+# cxx_find_bqlog() — 头文件 + 库定位（官方 CMake package 优先，旧版回退 pkg-config/path）
 # -----------------------------------------------------------------------------
 function(cxx_find_bqlog)
-  if(CXX_BQLOG_FOUND AND (CXX_BQLOG_LIBRARY OR TARGET PkgConfig::PC_bqlog))
-    return()
-  endif()
-
   # bqlog 安装位置：macOS/Linux Homebrew（opt/bqlog）、Linuxbrew 备选、显式 ROOT
   set(_bq_roots "")
   foreach(_root IN ITEMS
@@ -164,36 +160,92 @@ function(cxx_find_bqlog)
       "${_root}/lib/pkgconfig:${_root}/lib64/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   endforeach()
 
-  find_package(PkgConfig QUIET)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(PC_bqlog QUIET IMPORTED_TARGET bqlog)
-  endif()
-
   set(_inc "")
   set(_lib "")
   set(_ver "")
-  if(PC_bqlog_FOUND)
-    set(_inc "${PC_bqlog_INCLUDE_DIRS}")
-    set(_ver "${PC_bqlog_VERSION}")
-    if(CXX_BQLOG_LINK STREQUAL "static")
-      find_library(_lib NAMES BqLog
-        PATHS "${PC_bqlog_LIBRARY_DIRS}" NO_DEFAULT_PATH)
-    else()
-      find_library(_lib NAMES BqLog
-        PATHS "${PC_bqlog_LIBRARY_DIRS}" NO_DEFAULT_PATH)
+  set(_target "")
+
+  # 2.7.3 起安装官方 CMake package；优先使用 imported targets，
+  # 避免 CMakeCache 中旧 Homebrew keg 的路径继续生效。
+  find_file(_bqlog_package_config NAMES BqLogConfig.cmake
+    HINTS ${_bq_roots}
+    PATH_SUFFIXES lib/cmake/BqLog lib64/cmake/BqLog
+    NO_CACHE)
+  if(_bqlog_package_config)
+    include("${_bqlog_package_config}")
+    if(DEFINED BQLOG_INCLUDE_DIR)
+      set(_inc "${BQLOG_INCLUDE_DIR}")
     endif()
-    if(NOT _lib)
-      find_library(_lib NAMES BqLog
-        HINTS ${_bq_roots} PATH_SUFFIXES lib lib64)
+    if(CXX_BQLOG_LINK STREQUAL "static" AND TARGET bqlog::BqLogStatic)
+      set(_target "bqlog::BqLogStatic")
+    elseif(TARGET bqlog::BqLogShared)
+      set(_target "bqlog::BqLogShared")
     endif()
-    if(NOT _inc)
-      find_path(_inc bq_log/bq_log.h HINTS ${_bq_roots} PATH_SUFFIXES include)
+    if(_target)
+      get_target_property(_lib "${_target}" IMPORTED_LOCATION)
+      if(NOT _lib)
+        get_target_property(_lib "${_target}" IMPORTED_LOCATION_RELEASE)
+      endif()
+      if(NOT _lib)
+        get_target_property(_lib "${_target}" IMPORTED_LOCATION_DEBUG)
+        if(_lib AND _lib MATCHES "-NOTFOUND$")
+          set(_lib "")
+        endif()
+      endif()
     endif()
-  else()
+  endif()
+
+  # 从当前 Homebrew opt 软链接解析真实版本，不再信任旧 CMakeCache。
+  foreach(_root IN LISTS _bq_roots)
+    get_filename_component(_real_root "${_root}" REALPATH)
+    get_filename_component(_root_name "${_real_root}" NAME)
+    if(_root_name MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+      set(_ver "${_root_name}")
+      break()
+    endif()
+  endforeach()
+  if(_ver STREQUAL "" AND _bqlog_package_config)
+    get_filename_component(_bqlog_package_dir "${_bqlog_package_config}" DIRECTORY)
+    set(_bqlog_version_file "${_bqlog_package_dir}/BqLogConfigVersion.cmake")
+    if(EXISTS "${_bqlog_version_file}")
+      file(STRINGS "${_bqlog_version_file}" _bqlog_version_line
+        REGEX "PACKAGE_VERSION \"[0-9]+\\.[0-9]+\\.[0-9]+\"")
+      if(_bqlog_version_line MATCHES "\"([0-9]+\\.[0-9]+\\.[0-9]+)\"")
+        set(_ver "${CMAKE_MATCH_1}")
+      endif()
+    endif()
+  endif()
+
+  # 兼容未安装 CMake package 的旧 bqlog；每次配置清除 pkg-config 的
+  # keg 路径缓存，否则 brew upgrade 后仍会引用已删除的旧 Cellar。
+  if(NOT _inc OR NOT EXISTS "${_inc}/bq_log/bq_log.h")
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      get_cmake_property(_cache_variables CACHE_VARIABLES)
+      foreach(_cache_var IN LISTS _cache_variables)
+        if(_cache_var MATCHES "^(PC_bqlog_|pkgcfg_.*PC_bqlog_|__pkg_config_.*_PC_bqlog)")
+          unset(${_cache_var} CACHE)
+        endif()
+      endforeach()
+      pkg_check_modules(PC_bqlog QUIET IMPORTED_TARGET bqlog)
+      if(PC_bqlog_FOUND
+          AND EXISTS "${PC_bqlog_INCLUDE_DIRS}/bq_log/bq_log.h")
+        set(_inc "${PC_bqlog_INCLUDE_DIRS}")
+        set(_ver "${PC_bqlog_VERSION}")
+        if(TARGET PkgConfig::PC_bqlog)
+          set(_target "PkgConfig::PC_bqlog")
+        endif()
+      endif()
+    endif()
+  endif()
+
+  if(NOT _inc OR NOT EXISTS "${_inc}/bq_log/bq_log.h")
     find_path(_inc bq_log/bq_log.h
-      HINTS ${_bq_roots} PATH_SUFFIXES include)
+      HINTS ${_bq_roots} PATH_SUFFIXES include NO_CACHE)
+  endif()
+  if(NOT _target AND NOT _lib)
     find_library(_lib NAMES BqLog
-      HINTS ${_bq_roots} PATH_SUFFIXES lib lib64)
+      HINTS ${_bq_roots} PATH_SUFFIXES lib lib64 NO_CACHE)
   endif()
 
   if(_inc AND EXISTS "${_inc}/bq_log/bq_log.h")
@@ -202,13 +254,14 @@ function(cxx_find_bqlog)
     set(CXX_BQLOG_INCLUDE_DIR "" CACHE PATH "bqlog include dir" FORCE)
   endif()
   set(CXX_BQLOG_LIBRARY "${_lib}" CACHE FILEPATH "bqlog library" FORCE)
+  set(CXX_BQLOG_TARGET "${_target}" CACHE STRING "bqlog imported target" FORCE)
   if(_ver STREQUAL "")
     set(_ver "${CXX_MIN_BQLOG}")
   endif()
   set(CXX_BQLOG_VERSION "${_ver}" CACHE STRING "bqlog version" FORCE)
 
   if(CXX_BQLOG_INCLUDE_DIR AND
-     (CXX_BQLOG_LIBRARY OR CXX_BQLOG_MODE STREQUAL "header"
+     (CXX_BQLOG_TARGET OR CXX_BQLOG_LIBRARY
       OR TARGET PkgConfig::PC_bqlog))
     set(CXX_BQLOG_FOUND ON CACHE INTERNAL "bqlog discovered" FORCE)
   else()
@@ -251,7 +304,9 @@ function(cxx_bqlog_module_target)
     FILE_SET CXX_MODULES BASE_DIRS "${_mod_dir}" FILES "${_mod_src}")
   target_compile_features(cxx_bqlog_module PUBLIC cxx_std_20)
   target_include_directories(cxx_bqlog_module PUBLIC "${CXX_BQLOG_INCLUDE_DIR}")
-  if(TARGET PkgConfig::PC_bqlog)
+  if(CXX_BQLOG_TARGET)
+    target_link_libraries(cxx_bqlog_module PUBLIC "${CXX_BQLOG_TARGET}")
+  elseif(TARGET PkgConfig::PC_bqlog)
     target_link_libraries(cxx_bqlog_module PUBLIC PkgConfig::PC_bqlog)
   elseif(CXX_BQLOG_LIBRARY)
     target_link_libraries(cxx_bqlog_module PUBLIC "${CXX_BQLOG_LIBRARY}")
@@ -289,7 +344,11 @@ function(cxx_link_bqlog target)
   endif()
 
   if(CXX_BQLOG_MODE STREQUAL "library")
-    if(TARGET PkgConfig::PC_bqlog)
+    if(CXX_BQLOG_TARGET)
+      target_link_libraries(${target} PRIVATE "${CXX_BQLOG_TARGET}")
+      cxx_msg(blue "bqlog(library/target) → ${target}")
+      return()
+    elseif(TARGET PkgConfig::PC_bqlog)
       target_link_libraries(${target} PRIVATE PkgConfig::PC_bqlog)
       cxx_msg(blue "bqlog(library/pkg-config) → ${target}")
       return()
