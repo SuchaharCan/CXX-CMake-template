@@ -22,8 +22,8 @@
 
 | 变量 | 路径 | 用途 |
 | --- | --- | --- |
-| `PROJECT_ROOT` | `/Users/songhoujin/00CMake-Template` | 源码、Dockerfile、编译产物 |
-| `IMAGE_HOME` | `/Users/songhoujin/00Docker_Containers/cmake_template_builder` | 镜像 tar 归档 |
+| `PROJECT_ROOT` | `${home}/00CMake-Template` | 源码、Dockerfile、编译产物 |
+| `IMAGE_HOME` | `${home}/00Docker_Containers/cmake_template_builder` | 镜像 tar 归档 |
 | `IMAGE_REF` | `local/cmake-template-ubuntu24:latest` | Apple container 本地镜像名 |
 | `IMAGE_ARCHIVE` | `$IMAGE_HOME/cmake-template-ubuntu24.tar` | 可恢复的镜像归档文件 |
 
@@ -36,8 +36,8 @@ Apple container 的实际镜像库由 container 服务统一维护，不能直�
 变量只在当前 shell 有效。新开终端后需要重新执行：
 
 ```bash
-export PROJECT_ROOT=/Users/songhoujin/00CMake-Template
-export IMAGE_HOME=/Users/songhoujin/00Docker_Containers/cmake_template_builder
+export PROJECT_ROOT=${home}/00CMake-Template
+export IMAGE_HOME=${home}/00Docker_Containers/cmake_template_builder
 export IMAGE_REF=local/cmake-template-ubuntu24:latest
 export IMAGE_ARCHIVE="$IMAGE_HOME/cmake-template-ubuntu24.tar"
 export GITHUB_PROXY=https://gh-proxy.org
@@ -237,7 +237,7 @@ container delete cmake-template-dev
 新开终端后变量不会自动保留，而且相对路径依赖当前目录：
 
 ```bash
-export PROJECT_ROOT=/Users/songhoujin/00CMake-Template
+export PROJECT_ROOT=${home}/00CMake-Template
 cd "$PROJECT_ROOT"
 test -f container/Dockerfile
 ```
