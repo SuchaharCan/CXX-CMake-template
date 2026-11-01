@@ -17,6 +17,8 @@ CXX_ENABLE_CCACHE := "ON"
 CLICOLOR_FORCE := "1"
 CXX_BUILD_COLOR_FORCE := "1"
 clang_format := env_var_or_default("CLANG_FORMAT", "clang-format")
+# 所有 CMake 命令统一走独立亮黄色回显器（默认 256 色 226，不使用灰黄 1;33）。
+cmake_runner := "bash \"" + justfile_directory() + "/cmake/run_cmake_command.sh\""
 cxx_compiler := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
 cxx_stdlib := env_var_or_default("CXX_STDLIB", "auto")
 toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib + " -DCXX_ENABLE_CCACHE=ON"
@@ -49,12 +51,12 @@ ccache-stats:
 
 # 配置（Ninja + RelWithDebInfo；追加参数直接传 cmake）
 configure *ARGS:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} {{ARGS}}
+    @{{cmake_runner}} "CMake configure" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} {{ARGS}}
 
 # 基础构建
 build: configure
     @if grep -q '^CXX_ENABLE_CLANG_FORMAT:BOOL=ON' {{builddir}}/CMakeCache.txt; then just fmt; else echo "clang-format disabled, skip auto-fmt"; fi
-    cmake --build {{builddir}} -j{{jobs}}
+    @{{cmake_runner}} "CMake build" -- cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # 源码自动格式化（先精准检测 src/ 下源码，再 clang-format -i）
@@ -63,60 +65,60 @@ fmt:
 
 # 详细构建（所有命令逐参数换行显示，便于锁定参数）
 verbose: configure
-    cmake --build {{builddir}} -j{{jobs}} --verbose
+    @{{cmake_runner}} "CMake build (verbose)" -- cmake --build {{builddir}} -j{{jobs}} --verbose
     @just ccache-stats
 
 # 显式 Clang + libc++（模块模板唯一支持的组合）
 build-clang:
-    CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
-    cmake --build build/clang -j{{jobs}}
+    @CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" {{cmake_runner}} "CMake configure (clang/libc++)" -- cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
+    @{{cmake_runner}} "CMake build (clang/libc++)" -- cmake --build build/clang -j{{jobs}}
     @just ccache-stats
 
 # 语法检测（clang-tidy + clang-format）
 check: configure
-    cmake --build {{builddir}} -j{{jobs}}
-    cmake --build {{builddir}} --target tidy-check
-    cmake --build {{builddir}} --target syntax-check
+    @{{cmake_runner}} "CMake build (check)" -- cmake --build {{builddir}} -j{{jobs}}
+    @{{cmake_runner}} "CMake target tidy-check" -- cmake --build {{builddir}} --target tidy-check
+    @{{cmake_runner}} "CMake target syntax-check" -- cmake --build {{builddir}} --target syntax-check
     @just ccache-stats
 
 # 单元测试（自动开启 GTest）
 test:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
-    cmake --build {{builddir}} --target Ticket_tests -j{{jobs}}
+    @{{cmake_runner}} "CMake configure (tests)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    @{{cmake_runner}} "CMake build tests" -- cmake --build {{builddir}} --target Ticket_tests -j{{jobs}}
     ctest --test-dir {{builddir}} -j{{jobs}} --output-on-failure
     @just ccache-stats
 
 # 注释文档生成（clang-doc + Doxygen 双后端）
 docs:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
-    cmake --build {{builddir}} --target docs
+    @{{cmake_runner}} "CMake configure (docs)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    @{{cmake_runner}} "CMake build docs" -- cmake --build {{builddir}} --target docs
     @bash "{{justfile_directory()}}/cmake/report_docs_links.sh" "{{builddir}}"
     @just ccache-stats
 
 # 覆盖率（llvm-cov）
 coverage:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_COVERAGE=ON -DCXX_ENABLE_FUZZERS=OFF
-    cmake --build {{builddir}} -j{{jobs}}
+    @{{cmake_runner}} "CMake configure (coverage)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_COVERAGE=ON -DCXX_ENABLE_FUZZERS=OFF
+    @{{cmake_runner}} "CMake build (coverage)" -- cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # 微基准冒烟
 bench: configure
-    cmake --build {{builddir}} -j{{jobs}}
-    cmake --build {{builddir}} --target run-bench
+    @{{cmake_runner}} "CMake build (bench)" -- cmake --build {{builddir}} -j{{jobs}}
+    @{{cmake_runner}} "CMake target run-bench" -- cmake --build {{builddir}} --target run-bench
     @just ccache-stats
 
 # libFuzzer 冒烟
 fuzz:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_FUZZERS=ON -DCXX_ENABLE_COVERAGE=OFF
-    cmake --build {{builddir}} -j{{jobs}}
-    cmake --build {{builddir}} --target run-fuzz
+    @{{cmake_runner}} "CMake configure (fuzz)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_FUZZERS=ON -DCXX_ENABLE_COVERAGE=OFF
+    @{{cmake_runner}} "CMake build (fuzz)" -- cmake --build {{builddir}} -j{{jobs}}
+    @{{cmake_runner}} "CMake target run-fuzz" -- cmake --build {{builddir}} --target run-fuzz
     @just ccache-stats
 
 # IWYU + include-cleaner
 iwyu:
-    cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
-    cmake --build {{builddir}} -j{{jobs}}
-    @if cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check 不可用（工具有缺失）— 跳过"; fi
+    @{{cmake_runner}} "CMake configure (IWYU)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON -DCXX_ENABLE_COVERAGE=OFF -DCXX_ENABLE_FUZZERS=OFF
+    @{{cmake_runner}} "CMake build (IWYU)" -- cmake --build {{builddir}} -j{{jobs}}
+    @if {{cmake_runner}} "CMake list targets" -- cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then {{cmake_runner}} "CMake target iwyu-check" -- cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check 不可用（工具有缺失）— 跳过"; fi
     @just ccache-stats
 
 # 本地复现 GitHub Actions 矩阵（macOS/Linux 通用）
@@ -125,4 +127,4 @@ local-ci:
 
 # 清理构建目录
 clean:
-    cmake -E remove_directory {{builddir}}
+    @{{cmake_runner}} "CMake clean build" -- cmake -E remove_directory {{builddir}}
