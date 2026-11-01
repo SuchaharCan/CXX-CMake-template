@@ -21,6 +21,7 @@ on:
       - "ci/pages-templates.tsv"
       - "ci/site-nav.css"
       - "ci/site-nav.html"
+      - "ci/umami.html"
       - "ci/install-deps-macos.sh"
       - ".github/workflows/docs-pages.yml"
       - "README.md"

@@ -42,6 +42,7 @@
 - `ci/build-pages-docs.sh` — 汇总三个模板到单一 Pages 站点
 - `ci/pages-templates.tsv` — Pages 首页模板清单与说明维护点
 - `ci/site-nav.html`、`ci/site-nav.css` — 详情页公共导航与首页博客入口
+- `ci/umami.html` — 发布站点共用的 Umami 追踪片段
 
 > `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
 > `CLANG_FORMAT` 环境变量（默认 `clang-format`）定位格式化工具；
@@ -118,6 +119,21 @@ https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/
 2. 确保模板有 CMakeLists.txt 和 `docs-doxygen` target；
 3. 推送 `master`，`Template Doxygen Pages` 自动重建总站。
 
+### Umami 访问统计
+
+`ci/build-pages-docs.sh` 会在站点全部生成后，把 `ci/umami.html` 注入每个 HTML
+页面的 `</head>` 前。覆盖范围包括：
+
+- Pages 根入口 `index.html`；
+- 三个模板的 Doxygen 首页、类/函数/文件等全部 HTML 子页面；
+- 后续按 `ci/pages-templates.tsv` 新增模板生成的 Doxygen 页面。
+
+当前片段复用博客的 Umami Website ID，并以 `data-domains` 将采集限制在
+`suchaharcan.github.io`；`data-exclude-hash` 与参考站保持一致，不把 Doxygen
+页内锚点拆成独立访问。更换统计属性或域名时只修改这一个文件。GitHub Pages
+当前未设置 CSP；若以后增加 CSP，需要同时允许 `script-src cloud.umami.is`
+和连接 `cloud.umami.is`。
+
 发布前本地验证：
 
 ```bash
@@ -129,6 +145,8 @@ test -f build/pages-site/single-exe-modules/index.html
 test -f build/pages-site/single-exe-static-modules/index.html
 rg -q '返回模板集合' build/pages-site/single-exe-static-modules/index.html
 rg -q '03Share_blog' build/pages-site/index.html
+rg -q 'cloud.umami.is/script.js' build/pages-site/index.html
+rg -q 'cloud.umami.is/script.js' build/pages-site/single-exe-classic/index.html
 ```
 
 ## macOS 27 说明

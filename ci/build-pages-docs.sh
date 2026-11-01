@@ -21,6 +21,7 @@ BUILD_ROOT="${PAGES_BUILD_ROOT:-${ROOT}/build/pages-build}"
 MANIFEST="${ROOT}/ci/pages-templates.tsv"
 SITE_NAV_CSS="${ROOT}/ci/site-nav.css"
 SITE_NAV_HTML="${ROOT}/ci/site-nav.html"
+SITE_UMAMI_HTML="${ROOT}/ci/umami.html"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
 if [[ "$SITE_DIR" == "/" || -z "$SITE_DIR" ]]; then
@@ -33,6 +34,10 @@ if [[ "$BUILD_ROOT" == "/" || -z "$BUILD_ROOT" ]]; then
 fi
 if [[ ! -f "$MANIFEST" ]]; then
   echo "error: missing Pages template manifest: $MANIFEST" >&2
+  exit 1
+fi
+if [[ ! -f "$SITE_UMAMI_HTML" ]]; then
+  echo "error: missing Umami fragment: $SITE_UMAMI_HTML" >&2
   exit 1
 fi
 
@@ -56,6 +61,24 @@ inject_template_navigation() {
         or die "missing </head> in $ARGV\n";
       s{<body([^>]*)>}{<body$1>\n$nav}
         or die "missing <body> in $ARGV\n";
+    ' {} +
+}
+
+inject_umami_tracking() {
+  local destination="$1"
+
+  find "$destination" -type f -name '*.html' -exec \
+    env UMAMI_FRAGMENT="$SITE_UMAMI_HTML" perl -0pi -e '
+      BEGIN {
+        open my $fh, q{<}, $ENV{UMAMI_FRAGMENT} or die "cannot read Umami fragment: $ENV{UMAMI_FRAGMENT}\n";
+        local $/;
+        $umami = <$fh>;
+        close $fh;
+        chomp $umami;
+      }
+      next if m{cloud\.umami\.is/script\.js};
+      s{</head>}{\n$umami\n</head>}
+        or die "missing </head> in $ARGV\n";
     ' {} +
 }
 
@@ -164,6 +187,8 @@ HTML_HEAD
 </html>
 HTML_TAIL
 } >"${SITE_DIR}/index.html"
+
+inject_umami_tracking "$SITE_DIR"
 
 echo
 echo "Pages site ready: ${SITE_DIR}"

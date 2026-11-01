@@ -22,6 +22,9 @@
 变化时重新生成全部模板，并使用单一 Pages artifact 原子发布。博客和其他网站只需
 链接上述地址，不需要包含模板源码或生成后的 HTML。
 
+发布时会向总入口及全部 Doxygen 子页面统一注入 Umami 追踪脚本，使用与博客相同的
+网站 ID。
+
 ## Apple container 构建环境
 
 镜像定义位于 [`container/Dockerfile`](container/Dockerfile)，面向 Apple Silicon
