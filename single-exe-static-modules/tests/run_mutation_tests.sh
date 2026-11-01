@@ -24,7 +24,7 @@ run_killing_test() {
     -DCXX_ENABLE_GTEST=ON \
     -DCXX_ENABLE_CCACHE=ON >/dev/null
   local jobs
-  jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+  jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
   cmake --build "$dir/build-mutation" --target static_modules_tests -j"$jobs" >/dev/null
   if "$dir/build-mutation/static_modules_tests" "--gtest_filter=${filter}" >/dev/null 2>&1; then
     echo "[SURVIVED] ${label} — 测试未杀死变异体" >&2

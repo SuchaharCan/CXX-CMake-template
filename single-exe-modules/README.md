@@ -42,7 +42,7 @@
 > **目录约定**：`just` 命令在模板根目录执行；手动 cmake 先 `cd build`。
 
 ```bash
-just            # 基础构建（cmake -G Ninja .. && cmake --build . -j9）
+just            # 基础构建（并行度 = num_cpus()）
 just list       # 全部命令（注释 yellow）
 just check      # clang-tidy + clang-format
 just test       # 单元测试（自动开启 GTest）
@@ -52,6 +52,9 @@ just fuzz       # libFuzzer 冒烟
 just coverage   # llvm-cov
 just iwyu       # IWYU + include-cleaner
 ```
+
+`justfile` 的 `jobs := env_var_or_default("JOBS", num_cpus())` 默认使用全部硬件逻辑核心；
+构建和 CTest 都使用该值。需要限流时可执行 `JOBS=6 just build`，`just env` 会打印最终值。
 
 所有会编译的 recipe 都强制启用 ccache，并在末尾输出独立的缓存命中率统计；
 也可随时运行 `just ccache-stats` 查看。`just docs` 会输出粗体黄色的

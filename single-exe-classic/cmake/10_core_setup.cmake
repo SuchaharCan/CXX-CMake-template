@@ -26,6 +26,12 @@ option(CXX_SHOW_CMAKE_CONFIG
 option(CXX_SHOW_CMAKE_VARIABLES
        "Print grouped CMake variable values" ON)
 
+include(ProcessorCount)
+ProcessorCount(CXX_BUILD_JOBS)
+if(CXX_BUILD_JOBS EQUAL 0)
+  set(CXX_BUILD_JOBS 1)
+endif()
+
 # -----------------------------------------------------------------------------
 # cxx_register_apply_gate(fn) — 可选模块注册 per-target 门禁（可扩展点）
 # -----------------------------------------------------------------------------
@@ -194,6 +200,7 @@ function(cxx_phase_variables)
   if(DEFINED STR_TEST)
     cxx_var_line(cyan STR_TEST)
   endif()
+  cxx_var_line(cyan CXX_BUILD_JOBS)
   cxx_var_line(cyan CXX_LOG_DIR)
   cxx_var_line(cyan CXX_LOG_MAX_LINES)
   cxx_var_line(cyan CXX_BUILD_LOG_MAX_LINES)
@@ -262,7 +269,7 @@ function(cxx_phase_finish)
     endif()
   endforeach()
   cxx_banner("CMake 配置完成")
-  cxx_msg(grass "请执行: cmake --build . -j9")
+  cxx_msg(grass "请执行: cmake --build . -j${CXX_BUILD_JOBS}")
   cxx_msg(cyan "可选目标: tidy-check | syntax-check | run-bench | run-fuzz | docs")
   cxx_msg(cyan "Build log: ${CXX_LOG_DIR}/cmake_build.log")
   cxx_msg(gray "CXX_PREFERRED_COMPILER=${CXX_PREFERRED_COMPILER} tidy=${CXX_ENABLE_CLANG_TIDY} format=${CXX_ENABLE_CLANG_FORMAT}")

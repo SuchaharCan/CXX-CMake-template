@@ -34,13 +34,17 @@ Stacks_Tools (exe)      单 main：import 三个模块 + CLI 路由
 cd single-exe-static-modules
 just build                 # auto = clang++ + libc++
 just test                  # 边界 + 并行 + 日志容量测试
-just parallel-test         # CTest -j8 + 线程并行测试
+just parallel-test         # CTest -jN + 线程并行测试
 just mutation-test         # 两个真实变异体必须被测试杀死
 just docs                  # 注释文档生成（clang-doc + Doxygen 双后端）
 just uml                   # C++ 内部函数调用/被调用关系图
 just check                 # clang-format（模块 TU 不做 clang-tidy）
 just local-ci              # 本机复现 GitHub Actions macOS 矩阵
 ```
+
+`justfile` 的 `jobs := env_var_or_default("JOBS", num_cpus())` 默认使用全部硬件逻辑核心；
+构建和 CTest 都使用该值。需要限流时可执行 `JOBS=6 just parallel-test`，
+`just env` 会打印最终值。
 
 所有会编译的 recipe（含测试、文档和变异测试）都启用 ccache，并在末尾打印
 独立缓存命中率；也可运行 `just ccache-stats`。`just docs` 会以粗体黄色输出

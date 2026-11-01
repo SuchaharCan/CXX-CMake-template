@@ -24,8 +24,9 @@ toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB="
 JUST_COMMAND_COLOR := "yellow"
 
 builddir := "build"
+jobs := env_var_or_default("JOBS", num_cpus())
 
-# 默认：基础构建（cmake .. && cmake --build . -j9  启用代码格式自动化）
+# 默认：基础构建（行数 = 硬件逻辑核心数，可用 JOBS=N 覆盖）
 default: build
 
 # 命令列表（注释以 yellow 显示）
@@ -37,6 +38,7 @@ env:
     @echo "CXX_PREFERRED_COMPILER  = {{CXX_PREFERRED_COMPILER}}"
     @echo "CXX_BQLOG_MODE          = {{CXX_BQLOG_MODE}}"
     @echo "CXX_ENABLE_CCACHE       = {{CXX_ENABLE_CCACHE}}"
+    @echo "JOBS                    = {{jobs}}"
     @echo "CLICOLOR_FORCE          = 1"
     @echo "CXX_BUILD_COLOR_FORCE   = 1"
 
@@ -52,7 +54,7 @@ configure *ARGS:
 # 基础构建
 build: configure
     @if grep -q '^CXX_ENABLE_CLANG_FORMAT:BOOL=ON' {{builddir}}/CMakeCache.txt; then just fmt; else echo "clang-format disabled, skip auto-fmt"; fi
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # 源码自动格式化（先精准检测 src/ 下源码，再 clang-format -i）
@@ -61,18 +63,18 @@ fmt:
 
 # 详细构建（所有命令逐参数换行显示，便于锁定参数）
 verbose: configure
-    cmake --build {{builddir}} -j9 --verbose
+    cmake --build {{builddir}} -j{{jobs}} --verbose
     @just ccache-stats
 
 # 显式 Clang + libc++（独立构建目录，避免缓存切换）
 build-clang:
     CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
-    cmake --build build/clang -j9
+    cmake --build build/clang -j{{jobs}}
     @just ccache-stats
 
 # 语法检测（clang-tidy + clang-format）
 check: configure
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     cmake --build {{builddir}} --target tidy-check
     cmake --build {{builddir}} --target syntax-check
     @just ccache-stats
@@ -80,8 +82,8 @@ check: configure
 # 单元测试（自动开启 GTest）
 test:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
-    cmake --build {{builddir}} --target step1_tests -j9
-    ctest --test-dir {{builddir}} --output-on-failure
+    cmake --build {{builddir}} --target step1_tests -j{{jobs}}
+    ctest --test-dir {{builddir}} -j{{jobs}} --output-on-failure
     @just ccache-stats
 
 # 注释文档生成（clang-doc + Doxygen 双后端）
@@ -94,26 +96,26 @@ docs:
 # 覆盖率（llvm-cov）
 coverage:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_COVERAGE=ON
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # 微基准冒烟
 bench: configure
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     cmake --build {{builddir}} --target run-bench
     @just ccache-stats
 
 # libFuzzer 冒烟
 fuzz:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_FUZZERS=ON
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     cmake --build {{builddir}} --target run-fuzz
     @just ccache-stats
 
 # IWYU + include-cleaner
 iwyu:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_IWYU=ON -DCXX_ENABLE_INCLUDE_CLEANER=ON
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     @if cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check 不可用（工具有缺失）— 跳过"; fi
     @just ccache-stats
 

@@ -20,6 +20,7 @@ cxx_stdlib := env_var_or_default("CXX_STDLIB", "auto")
 toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib + " -DCXX_ENABLE_CCACHE=ON"
 
 builddir := "build"
+jobs := env_var_or_default("JOBS", num_cpus())
 
 default: build
 
@@ -33,6 +34,7 @@ env:
     @echo "CXX_STDLIB              = {{CXX_STDLIB}}"
     @echo "CXX_BQLOG_MODE          = module"
     @echo "CXX_ENABLE_CCACHE       = {{CXX_ENABLE_CCACHE}}"
+    @echo "JOBS                    = {{jobs}}"
     @echo "CXX_BUILD_COLOR_FORCE   = 1"
 
 # 单独的 ccache 缓存使用统计区段
@@ -47,13 +49,13 @@ configure *ARGS:
 # 基础构建
 build: configure
     @if grep -q '^CXX_ENABLE_CLANG_FORMAT:BOOL=ON' {{builddir}}/CMakeCache.txt; then just fmt; else echo "clang-format disabled, skip auto-fmt"; fi
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # 显式 clang++ + libc++（本模板唯一支持的工具链组合）
 build-clang:
     CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
-    cmake --build build/clang -j9
+    cmake --build build/clang -j{{jobs}}
     @just ccache-stats
 
 # 源码自动格式化（含 .cppm）
@@ -62,7 +64,7 @@ fmt:
 
 # 语法检查（format 必有；tidy 在纯模块 TU 下不注册）
 check: configure
-    cmake --build {{builddir}} -j9
+    cmake --build {{builddir}} -j{{jobs}}
     @if cmake --build {{builddir}} --target help | grep -q "tidy-check"; then cmake --build {{builddir}} --target tidy-check; else echo "tidy-check skipped (module-only targets)"; fi
     cmake --build {{builddir}} --target syntax-check
     @just ccache-stats
@@ -70,15 +72,15 @@ check: configure
 # 单元测试（含边界 + 并行测试）
 test:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
-    cmake --build {{builddir}} --target static_modules_tests -j9
-    ctest --test-dir {{builddir}} --output-on-failure
+    cmake --build {{builddir}} --target static_modules_tests -j{{jobs}}
+    ctest --test-dir {{builddir}} -j{{jobs}} --output-on-failure
     @just ccache-stats
 
 # CTest 并行执行 + 线程级并行测试
 parallel-test:
     cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
-    cmake --build {{builddir}} --target static_modules_tests -j9
-    ctest --test-dir {{builddir}} -j8 --output-on-failure
+    cmake --build {{builddir}} --target static_modules_tests -j{{jobs}}
+    ctest --test-dir {{builddir}} -j{{jobs}} --output-on-failure
     @just ccache-stats
 
 # 注释文档生成（clang-doc + Doxygen 双后端；设计文档见 docs/DESIGN_DOC.md）

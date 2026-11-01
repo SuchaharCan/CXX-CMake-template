@@ -67,7 +67,7 @@ bqlog 接入：`-DCXX_BQLOG_MODE=header`（默认，头文件 `BQ_LATE_BINDING` 
 ### just（推荐）
 
 ```bash
-just            # 基础构建（cmake .. && cmake --build . -j9）
+just            # 基础构建（并行度 = num_cpus()）
 just list       # 全部命令（注释以 yellow 显示）
 just env        # 必选系统环境变量
 just fmt        # 源码自动格式化（clang-format -i，仅格式化 src/ 下精准检测到的源码）
@@ -81,11 +81,14 @@ just iwyu       # IWYU + include-cleaner
 just verbose    # 详细构建（命令逐参数换行）
 ```
 
+`justfile` 的 `jobs := env_var_or_default("JOBS", num_cpus())` 默认使用全部硬件逻辑核心；
+构建和 CTest 都使用该值。需要限流时可执行 `JOBS=6 just build`，`just env` 会打印最终值。
+
 所有会编译的 recipe 都强制启用 ccache，并在末尾输出独立的缓存命中率统计；
 也可随时运行 `just ccache-stats` 查看。`just docs` 在 clang-doc 完成后会以
 粗体黄色输出两条可点击链接，分别打开 Doxygen 和 clang-doc 的 `index.html`。
 
-> **目录约定**：`just` 系列命令直接在模板根目录执行（justfile 会自动定位 `build/` 并完成 `cmake ..` + `cmake --build`）。手动执行 cmake 时，先 `cd build` 进入构建目录，再 `cmake .. && cmake --build . -j9`。`just build` 在默认开启 clang-format 时会先自动执行 `clang-format -i` 格式化源码（先精准检测 `src/` 下的 `.cxx/.hxx/.cpp/.hpp`，再做格式自动化），确保 PRE_BUILD 的 dry-run 门禁不会因格式问题失败。
+> **目录约定**：`just` 系列命令直接在模板根目录执行（justfile 会自动定位 `build/` 并完成 `cmake ..` + `cmake --build`）。手动执行 cmake 时，先 `cd build` 进入构建目录，再 `cmake .. && cmake --build . -j"$(getconf _NPROCESSORS_ONLN)"`。`just build` 在默认开启 clang-format 时会先自动执行 `clang-format -i` 格式化源码（先精准检测 `src/` 下的 `.cxx/.hxx/.cpp/.hpp`，再做格式自动化），确保 PRE_BUILD 的 dry-run 门禁不会因格式问题失败。
 
 ### 2.1 just 注释配色（yellow）
 
@@ -126,7 +129,7 @@ just configure -DCXX_SHOW_CMAKE_VARIABLES=OFF  # 隐藏分组变量清单
 
 ```bash
 cd build
-cmake .. && cmake --build . -j9       # 配置 + 构建
+cmake .. && cmake --build . -j"$(getconf _NPROCESSORS_ONLN)"  # 配置 + 构建
 ./step1 100
 ctest --output-on-failure             # 需 -DCXX_ENABLE_GTEST=ON
 ```
