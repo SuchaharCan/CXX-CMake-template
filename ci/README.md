@@ -41,6 +41,7 @@
 - `.github/workflows/docs-pages.yml` — 构建全部模板 Doxygen 并发布 GitHub Pages
 - `ci/build-pages-docs.sh` — 汇总三个模板到单一 Pages 站点
 - `ci/pages-templates.tsv` — Pages 首页模板清单与说明维护点
+- `ci/site-nav.html`、`ci/site-nav.css` — 详情页公共导航与首页博客入口
 
 > `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
 > `CLANG_FORMAT` 环境变量（默认 `clang-format`）定位格式化工具；
@@ -126,6 +127,8 @@ test -f build/pages-site/index.html
 test -f build/pages-site/single-exe-classic/index.html
 test -f build/pages-site/single-exe-modules/index.html
 test -f build/pages-site/single-exe-static-modules/index.html
+rg -q '返回模板集合' build/pages-site/single-exe-static-modules/index.html
+rg -q '03Share_blog' build/pages-site/index.html
 ```
 
 ## macOS 27 说明

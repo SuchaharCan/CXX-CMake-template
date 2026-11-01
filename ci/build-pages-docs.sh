@@ -19,6 +19,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SITE_DIR="${1:-${ROOT}/build/pages-site}"
 BUILD_ROOT="${PAGES_BUILD_ROOT:-${ROOT}/build/pages-build}"
 MANIFEST="${ROOT}/ci/pages-templates.tsv"
+SITE_NAV_CSS="${ROOT}/ci/site-nav.css"
+SITE_NAV_HTML="${ROOT}/ci/site-nav.html"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
 if [[ "$SITE_DIR" == "/" || -z "$SITE_DIR" ]]; then
@@ -37,6 +39,25 @@ fi
 cmake -E remove_directory "$SITE_DIR"
 cmake -E remove_directory "$BUILD_ROOT"
 mkdir -p "$SITE_DIR" "$BUILD_ROOT"
+cp "$SITE_NAV_CSS" "${SITE_DIR}/site-nav.css"
+
+inject_template_navigation() {
+  local destination="$1"
+
+  find "$destination" -type f -name '*.html' -exec \
+    env NAV_FRAGMENT="$SITE_NAV_HTML" perl -0pi -e '
+      BEGIN {
+        open my $fh, q{<}, $ENV{NAV_FRAGMENT} or die "cannot read navigation fragment: $ENV{NAV_FRAGMENT}\n";
+        local $/;
+        $nav = <$fh>;
+        close $fh;
+      }
+      s{</head>}{<link rel="stylesheet" href="../site-nav.css"/>\n</head>}
+        or die "missing </head> in $ARGV\n";
+      s{<body([^>]*)>}{<body$1>\n$nav}
+        or die "missing <body> in $ARGV\n";
+    ' {} +
+}
 
 build_template() {
   local template_name="$1"
@@ -75,6 +96,7 @@ build_template() {
 
   mkdir -p "$destination"
   cp -R "${html_dir}/." "$destination/"
+  inject_template_navigation "$destination"
 }
 
 : >"${SITE_DIR}/.nojekyll"
@@ -92,6 +114,7 @@ done <"$MANIFEST"
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>00CMake-Template · Doxygen 文档</title>
+  <link rel="stylesheet" href="site-nav.css">
   <style>
     :root { color-scheme: light dark; --accent: #0969da; --card: rgba(127,127,127,.12); }
     body { max-width: 920px; margin: 0 auto; padding: 3rem 1.25rem 5rem;
@@ -109,8 +132,19 @@ done <"$MANIFEST"
   </style>
 </head>
 <body>
-  <h1>00CMake-Template</h1>
-  <p class="lead">C++ 模板集合的在线 Doxygen API 文档。</p>
+  <header class="collection-header">
+    <div>
+      <h1>00CMake-Template</h1>
+      <p class="lead">C++ 模板集合的在线 Doxygen API 文档。</p>
+    </div>
+    <a class="collection-blog-link" href="https://suchaharcan.github.io/03Share_blog/" title="打开 03Share_blog 博客" aria-label="打开 03Share_blog 博客">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 4h10.5A1.5 1.5 0 0 1 17 5.5V8h1.5A1.5 1.5 0 0 1 20 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5V5.5A1.5 1.5 0 0 1 5.5 4H5Z"/>
+        <path d="M7 7.5h7M7 10.5h4M7 13.5h3M16 11h1.5M16 14h1.5"/>
+      </svg>
+      <span>博客</span>
+    </a>
+  </header>
   <main class="grid">
 HTML_HEAD
 

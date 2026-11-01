@@ -19,6 +19,8 @@ on:
       - "single-exe-*/**"
       - "ci/build-pages-docs.sh"
       - "ci/pages-templates.tsv"
+      - "ci/site-nav.css"
+      - "ci/site-nav.html"
       - "ci/install-deps-macos.sh"
       - ".github/workflows/docs-pages.yml"
       - "README.md"
