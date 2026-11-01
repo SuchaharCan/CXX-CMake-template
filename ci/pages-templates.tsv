@@ -1,0 +1,4 @@
+# template	中文说明
+single-exe-classic	经典头文件/源文件单可执行模板
+single-exe-modules	C++ 模块单可执行模板
+single-exe-static-modules	多独立 STATIC 模块与 Omni-Stacks 实际应用

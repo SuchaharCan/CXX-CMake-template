@@ -1,0 +1,79 @@
+# =============================================================================
+# GitHub Actions —— 模板 Doxygen GitHub Pages
+#
+# 方案 A：
+#   - 一次构建全部模板的 Doxygen；
+#   - 汇总为单一 Pages artifact；
+#   - 根首页链接 /<template>/；
+#   - 博客只需要链接 GitHub Pages URL。
+#
+# 使用 macOS 以兼容 single-exe-modules/static-modules。只构建 Doxygen，
+# 不运行测试和真实数据操作。
+# =============================================================================
+name: Template Doxygen Pages
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "single-exe-*/**"
+      - "ci/build-pages-docs.sh"
+      - "ci/pages-templates.tsv"
+      - "ci/install-deps-macos.sh"
+      - ".github/workflows/docs-pages.yml"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: template-doxygen-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Doxygen site
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      JOBS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install documentation dependencies
+        run: bash ci/install-deps-macos.sh
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build all template Doxygen sites
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGES_BUILD_ROOT="$RUNNER_TEMP/pages-build" \
+            bash ci/build-pages-docs.sh "$RUNNER_TEMP/pages-site"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/pages-site
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

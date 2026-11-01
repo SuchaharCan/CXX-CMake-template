@@ -1,5 +1,5 @@
 # =============================================================================
-# .gitignore — single-exe-modules 模板
+# .gitignore — single-exe-static-modules / Omni-Stacks
 # 三分区维护：
 #   [1] 必填文件/文件夹 —— 受版本控制，禁止忽略（清单见下方注释）
 #   [2] 必填空文件     —— .gitkeep 占位，保留目录结构
@@ -21,11 +21,17 @@
 
 # ---- [2] 必填空文件（.gitkeep 占位，保留目录结构）------------------
 #   log/.gitkeep — log/ 目录本体入库；运行日志全部忽略（规则见 [3.2]）
+#   tests/logs/.gitkeep、tests/.runtime/.gitkeep — 测试目录结构
 /log/*
 !/log/.gitkeep
+/tests/logs/*
+!/tests/logs/.gitkeep
+/tests/.runtime/*
+!/tests/.runtime/.gitkeep
 
 # ---- [3.1] 排除：构建产物 -----------------------------------------
 /build/
+/dist/
 build-*/
 *.o
 *.a

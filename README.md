@@ -6,7 +6,21 @@
 | -------------------- | ------------------------------------------------------------------ |
 | `single-exe-classic` | 经典 `.hxx/.cxx` 单可执行（cmake/ 分层 + grc 着色 + bqlog）        |
 | `single-exe-modules` | C++23 模块单可执行（`import std` + 自研模块 + CMake 原生模块扫描） |
-| `single-exe-static-modules` | 多独立 STATIC 模块 + 单 main（bqlog 模块日志 + 边界/并行/变异测试） |
+| `single-exe-static-modules` | `Omni-Stacks` 实际应用：多独立 STATIC 模块 + 单 main（bqlog、Alfred、完整边界/变异/真实数据测试） |
+
+## 在线 Doxygen 文档
+
+模板仓库通过 GitHub Actions 自动构建全部模板的 Doxygen，并发布到 GitHub Pages：
+
+- [模板文档总入口](https://suchaharcan.github.io/CXX-CMake-template/)
+- [single-exe-classic](https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/)
+- [single-exe-modules](https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/)
+- [single-exe-static-modules](https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/)
+
+发布流程位于
+[`docs-pages.yml`](.github/workflows/docs-pages.yml)：每次模板、文档构建脚本或说明
+变化时重新生成全部模板，并使用单一 Pages artifact 原子发布。博客和其他网站只需
+链接上述地址，不需要包含模板源码或生成后的 HTML。
 
 ## Apple container 构建环境
 

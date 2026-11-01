@@ -13,6 +13,10 @@ include_guard(GLOBAL)
 option(CXX_ENABLE_DOCS "Generate API docs targets (clang-doc / Doxygen)" OFF)
 option(CXX_DOC_CLANGDOC "clang-doc backend (LLVM, reads compile_commands.json)" ON)
 option(CXX_DOC_DOXYGEN "Doxygen backend (docs/Doxyfile.in)" ON)
+set(CXX_DOC_CLANGDOC_BUILD_TARGETS "" CACHE STRING
+    "Targets built before clang-doc so C++ module .modmap files exist")
+set(CXX_DOC_CLANGDOC_SOURCES "" CACHE STRING
+    "Project sources processed by clang-doc; empty means every compile_commands TU")
 
 # -----------------------------------------------------------------------------
 # cxx_register_docs_targets()
@@ -35,13 +39,27 @@ function(cxx_register_docs_targets)
     if(NOT _clang_doc)
       find_program(_clang_doc clang-doc)
     endif()
-    # compile_commands.json 由 Ninja 在首次构建时生成，故此处只检查工具本身
+    # C++ 模块的 .modmap 是 Ninja 构建副产物。docs-clangdoc 必须先构建调用方
+    # 登记的目标，否则 clang-doc 会读到 compile_commands 但无法加载 import std。
     if(_clang_doc)
+      if(CXX_DOC_CLANGDOC_SOURCES)
+        # 显式只处理项目源码，排除构建目录生成的 std.cppm/bq.log.cppm。
+        set(_clangdoc_mode_args --format=html -p "${CMAKE_BINARY_DIR}")
+        set(_clangdoc_inputs ${CXX_DOC_CLANGDOC_SOURCES})
+      else()
+        # 无模块的普通模板仍可按 all-TUs 模式处理完整数据库。
+        set(_clangdoc_mode_args --executor=all-TUs --format=html)
+        set(_clangdoc_inputs "${CMAKE_BINARY_DIR}/compile_commands.json")
+      endif()
       add_custom_target(docs-clangdoc
-        COMMAND "${_clang_doc}" --executor=all-TUs --format=html
+        COMMAND "${CMAKE_COMMAND}" -E remove_directory
+          "${CMAKE_BINARY_DIR}/docs/clang-doc"
+        COMMAND "${_clang_doc}" ${_clangdoc_mode_args}
           "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
-          "${CMAKE_BINARY_DIR}/compile_commands.json"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+          ${_clangdoc_inputs}
+        DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+        # @CMakeFiles/...modmap 使用相对路径，必须从构建目录解析。
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
         VERBATIM)
       list(APPEND _docs_deps docs-clangdoc)
@@ -64,6 +82,8 @@ function(cxx_register_docs_targets)
       file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
       configure_file("${_doxy_in}" "${_doxy_out}" @ONLY)
       add_custom_target(docs-doxygen
+        COMMAND "${CMAKE_COMMAND}" -E remove_directory
+          "${CMAKE_BINARY_DIR}/docs/doxygen"
         COMMAND "${DOXYGEN_EXECUTABLE}" "${_doxy_out}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/docs"
         COMMENT "Doxygen → ${_doxy_html}"

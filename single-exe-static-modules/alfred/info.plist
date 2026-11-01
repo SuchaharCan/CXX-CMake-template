@@ -1,0 +1,625 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>com.songhoujin.stacks-tools</string>
+	<key>category</key>
+	<string>Productivity</string>
+	<key>connections</key>
+	<dict>
+		<key>72B0A492-545F-4A19-AB79-45756249B2C8</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>9D3A34D0-F648-4C31-93C4-27378B8E6809</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>9D3A34D0-F648-4C31-93C4-27378B8E6809</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>A1000001-0000-4000-8000-000000000001</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>A1000003-0000-4000-8000-000000000003</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>A1000001-0000-4000-8000-000000000001</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>D892EBA0-7462-4066-A3E0-3FA7F68E1338</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>B1000001-0000-4000-8000-000000000001</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>A1000003-0000-4000-8000-000000000003</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>A1000005-0000-4000-8000-000000000005</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>B1000003-0000-4000-8000-000000000003</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>A1000005-0000-4000-8000-000000000005</key>
+		<array/>
+	</dict>
+	<key>createdby</key>
+	<string>https://github.com/SuchaharCan/</string>
+	<key>description</key>
+	<string>Stacks 2 的 Alfred 任务中心：路径、任务、搜索、计时、提醒同步。Alfred task center for Stacks 2.</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Omni-Stacks</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<true/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>s</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>读取 Stacks 数据…</string>
+				<key>script</key>
+				<string>./scripts/stacks-filter.zsh "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>subtext</key>
+				<string>任务 · 项目/清单 · 本周 · 计时 / Tasks · Projects/Lists · Week · Timers</string>
+				<key>title</key>
+				<string>Omni-Stacks 任务中心 / Omni-Stacks Tasks</string>
+				<key>type</key>
+				<integer>11</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>72B0A492-545F-4A19-AB79-45756249B2C8</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>./scripts/stacks-action.zsh "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>5</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>9D3A34D0-F648-4C31-93C4-27378B8E6809</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>lastpathcomponent</key>
+				<false/>
+				<key>onlyshowifquerypopulated</key>
+				<true/>
+				<key>removeextension</key>
+				<false/>
+				<key>text</key>
+				<string>{query}</string>
+				<key>title</key>
+				<string>Stacks</string>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.output.notification</string>
+			<key>uid</key>
+			<string>D892EBA0-7462-4066-A3E0-3FA7F68E1338</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>conditions</key>
+				<array>
+					<dict>
+						<key>inputstring</key>
+						<string>{var:STACKS_NOTIFICATION}</string>
+						<key>matchcasesensitive</key>
+						<false/>
+						<key>matchmode</key>
+						<integer>5</integer>
+						<key>matchstring</key>
+						<string></string>
+						<key>outputlabel</key>
+						<string></string>
+						<key>uid</key>
+						<string>B1000001-0000-4000-8000-000000000001</string>
+					</dict>
+				</array>
+				<key>elselabel</key>
+				<string>else</string>
+				<key>hideelse</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.utility.conditional</string>
+			<key>uid</key>
+			<string>A1000001-0000-4000-8000-000000000001</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>conditions</key>
+				<array>
+					<dict>
+						<key>inputstring</key>
+						<string>{var:STACKS_LARGE_TYPE}</string>
+						<key>matchcasesensitive</key>
+						<false/>
+						<key>matchmode</key>
+						<integer>5</integer>
+						<key>matchstring</key>
+						<string></string>
+						<key>outputlabel</key>
+						<string></string>
+						<key>uid</key>
+						<string>B1000003-0000-4000-8000-000000000003</string>
+					</dict>
+				</array>
+				<key>elselabel</key>
+				<string>else</string>
+				<key>hideelse</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.utility.conditional</string>
+			<key>uid</key>
+			<string>A1000003-0000-4000-8000-000000000003</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alignment</key>
+				<integer>0</integer>
+				<key>backgroundcolor</key>
+				<string></string>
+				<key>fadespeed</key>
+				<integer>0</integer>
+				<key>fillmode</key>
+				<integer>0</integer>
+				<key>font</key>
+				<string></string>
+				<key>ignoredynamicplaceholders</key>
+				<false/>
+				<key>largetypetext</key>
+				<string>{query}</string>
+				<key>textcolor</key>
+				<string></string>
+				<key>wrapat</key>
+				<integer>50</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.output.largetype</string>
+			<key>uid</key>
+			<string>A1000005-0000-4000-8000-000000000005</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string># Omni-Stacks
+
+输入 `s` 显示“所有可用操作”，并继续列出项目/清单。
+输入 `s 标题|描述|开始|截止|优先级` 后，回车即可创建到所选层级。
+
+- `s ap`（add-path）：添加新路径
+- `s rl`（reload）：重载全部已保存路径
+- `s cf`（config）：查看路径配置
+- `s v`（view）：模糊匹配项目/清单；进入后模糊匹配任务，详情和列表均可返回上一级
+- `s t 关键词`（tasks）：全局搜索全部工作区
+- `s i`（inbox）：选择工作区后直接列出 Inbox 任务，输入即模糊匹配；
+  无任务或无匹配时直接进入新建，任务详情可编辑并返回
+- `s w` / `s tm`：本周截止 / 计时
+
+优先级支持 low/低、medium/中、high/高、critical/紧急。
+日期支持 YYYY-MM-DD、today、tomorrow、+3d、monday。
+
+Workflow 配置提供 Debug、Notification、Play Sound、Show Large Type
+、字段分隔符，以及 ap/rl/cf/v/t/w/tm/i 八个可自定义别名。
+Logging 可整体启用/停用 bqlog 与 trace；启用时自动保留最近 3 个月。
+Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
+发布包不包含 data/ 和 log/，首次启动自动创建。
+
+## 核心源码与开发者
+
+- CLI 核心源码：[CXX-CMake-template](https://github.com/SuchaharCan/CXX-CMake-template)
+- 开发者个人网站：[suchaharcan.github.io](https://suchaharcan.github.io/)
+
+拉取核心源码后执行 `just docs`，查看架构设计和接口说明。</string>
+	<key>uidata</key>
+	<dict>
+		<key>72B0A492-545F-4A19-AB79-45756249B2C8</key>
+		<dict>
+			<key>xpos</key>
+			<integer>100</integer>
+			<key>ypos</key>
+			<integer>100</integer>
+		</dict>
+		<key>9D3A34D0-F648-4C31-93C4-27378B8E6809</key>
+		<dict>
+			<key>xpos</key>
+			<integer>360</integer>
+			<key>ypos</key>
+			<integer>100</integer>
+		</dict>
+		<key>D892EBA0-7462-4066-A3E0-3FA7F68E1338</key>
+		<dict>
+			<key>xpos</key>
+			<integer>620</integer>
+			<key>ypos</key>
+			<integer>100</integer>
+		</dict>
+	</dict>
+	<key>userconfigurationconfig</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<false/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>启用后把 Alfred 入参、路由、预处理、二进制 argv、退出码和后处理写入 Alfred Debugger 与 log/trace.log。Enable detailed pipeline tracing in Alfred Debugger and log/trace.log.</string>
+			<key>label</key>
+			<string>Debug 调试</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_DEBUG</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<true/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>操作完成后显示 macOS 通知。Show a macOS notification after each operation.</string>
+			<key>label</key>
+			<string>Notification 通知</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_NOTIFICATION</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<false/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>操作完成后播放系统 Glass 声音。Play the system Glass sound after each operation.</string>
+			<key>label</key>
+			<string>Play Sound 播放声音</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_SOUND</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<false/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>操作完成后使用 Alfred Large Type 放大显示结果。Show the result with Alfred Large Type after each operation.</string>
+			<key>label</key>
+			<string>Show Large Type 大字号</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_LARGE_TYPE</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>|</string>
+				<key>placeholder</key>
+				<string>|</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>任务字段分隔符，默认 |。Task field delimiter; default is |.</string>
+			<key>label</key>
+			<string>Field Delimiter 字段分隔符</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_DELIMITER</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>ap</string>
+				<key>placeholder</key>
+				<string>ap</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>添加路径的 Alfred 别名。Command alias for add-path.</string>
+			<key>label</key>
+			<string>添加路径别名 / Add-path alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_ADD_PATH</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>rl</string>
+				<key>placeholder</key>
+				<string>rl</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>重载全部路径的 Alfred 别名。Command alias for reload-all.</string>
+			<key>label</key>
+			<string>重载别名 / Reload alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_RELOAD</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>cf</string>
+				<key>placeholder</key>
+				<string>cf</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>路径配置的 Alfred 别名。Command alias for config.</string>
+			<key>label</key>
+			<string>配置别名 / Config alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_CONFIG</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>v</string>
+				<key>placeholder</key>
+				<string>v</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>项目/清单查看的 Alfred 别名。Command alias for view.</string>
+			<key>label</key>
+			<string>查看别名 / View alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_VIEW</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>t</string>
+				<key>placeholder</key>
+				<string>t</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>全局任务搜索的 Alfred 别名。Command alias for tasks.</string>
+			<key>label</key>
+			<string>搜索别名 / Tasks alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_TASKS</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>w</string>
+				<key>placeholder</key>
+				<string>w</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>本周截止的 Alfred 别名。Command alias for week.</string>
+			<key>label</key>
+			<string>本周别名 / Week alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_WEEK</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>tm</string>
+				<key>placeholder</key>
+				<string>tm</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>计时的 Alfred 别名。Command alias for timers.</string>
+			<key>label</key>
+			<string>计时别名 / Timers alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_TIMERS</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>i</string>
+				<key>placeholder</key>
+				<string>i</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>收件箱的 Alfred 别名。Command alias for inbox.</string>
+			<key>label</key>
+			<string>收件箱别名 / Inbox alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_INBOX</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<true/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>是否启用 bqlog 接口日志和调试 trace 文件。Enable bqlog interface logs and debug trace files.</string>
+			<key>label</key>
+			<string>Logging 日志记录</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_LOGGING</string>
+		</dict>
+	</array>
+	<key>variablesdontexport</key>
+	<array/>
+	<key>version</key>
+	<string>2.0.0</string>
+	<key>webaddress</key>
+	<string>https://suchaharcan.github.io/</string>
+</dict>
+</plist>

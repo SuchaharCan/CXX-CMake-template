@@ -22,7 +22,7 @@ fi
 
 export HOMEBREW_NO_AUTO_UPDATE=1
 
-FORMULAE="cmake ninja just grc ccache spdlog fmt googletest google-benchmark doxygen llvm"
+FORMULAE="cmake ninja just grc ccache spdlog fmt googletest google-benchmark doxygen graphviz llvm"
 
 missing=()
 for f in $FORMULAE; do
