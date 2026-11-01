@@ -5,7 +5,7 @@
  * @brief 【不可删除】场景日志公共模块 — exe / gtest / lldb 共用。
  *
  * 用途：log/ 下 exe.log、lldb_debug.log、gtest.log 的 spdlog 封装与行数裁剪。
- * 修改每文件最大行数：只改下方 CXX_LOG_MAX_LINES（业务源文件勿再重复 #define）。
+ * 修改每文件最大行数：只改下方 CXX_LOG_MAX_LINES（业务源文件勿再重复定义）。
  * CMake 侧 cmake_configure.log / cmake_build.log 会从本宏同步，保持一致。
  */
 

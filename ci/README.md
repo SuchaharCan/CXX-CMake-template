@@ -38,6 +38,9 @@
 - `ci/run-template-matrix.sh` — 模板矩阵执行器
 - `ci/select-changed-templates.sh` — Git 差异到模板目录的映射器
 - `ci/cleanup-job-workspace.sh` — Actions Job 完成前的安全工作区清理
+- `.github/workflows/docs-pages.yml` — 构建全部模板 Doxygen 并发布 GitHub Pages
+- `ci/build-pages-docs.sh` — 汇总三个模板到单一 Pages 站点
+- `ci/pages-templates.tsv` — Pages 首页模板清单与说明维护点
 
 > `justfile` 使用 `bash`（Ubuntu/macOS 默认可用），`just fmt` 通过
 > `CLANG_FORMAT` 环境变量（默认 `clang-format`）定位格式化工具；
@@ -59,6 +62,8 @@ bash ci/run-template-matrix.sh                       # 未指定模板时运行�
 CI_TEMPLATES="single-exe-classic" CI_JUST_RECIPES="build" \
   bash ci/run-template-matrix.sh                     # 只构建一个模板
 CI_JUST_RECIPES="build test" bash ci/run-template-matrix.sh  # 快速子集
+
+bash ci/build-pages-docs.sh build/pages-site  # 本地生成完整 Pages 站点
 ```
 
 `select-changed-templates.sh` 将模板名逐行写到 stdout，诊断信息写到 stderr；
@@ -82,6 +87,7 @@ git push -u origin master
 3. 打开仓库 **Actions** 标签：
    - 若是首次启用，点击 **I understand my workflows, go ahead and enable them**。
    - 左侧选择 `Template Matrix CI`，可看到模板检测、`Linux` 和 `macOS` Job。
+   - 左侧选择 `Template Doxygen Pages`，可查看或手动重跑 Pages 构建与部署。
 
 4. 触发方式：
    - 向 `master`/`main` 推送，或创建/更新 Pull Request（自动触发）。
@@ -90,6 +96,37 @@ git push -u origin master
 5. 建议开启分支保护（可选）：**Settings → Branches → Add branch protection rule**，
    勾选 **Require status checks to pass before merging**，选择
    `Detect changed templates` 与 `macOS / macos-26`。
+
+## GitHub Pages 文档
+
+Pages 使用**方案 A**：每次构建全部模板 Doxygen，生成一个完整静态 artifact，
+再由 `actions/deploy-pages` 原子发布。生成 HTML 不进入源码分支。
+
+URL 结构固定为：
+
+```text
+https://suchaharcan.github.io/CXX-CMake-template/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/
+```
+
+新增模板时：
+
+1. 在 `ci/pages-templates.tsv` 增加一行 `模板目录<TAB>说明`；
+2. 确保模板有 CMakeLists.txt 和 `docs-doxygen` target；
+3. 推送 `master`，`Template Doxygen Pages` 自动重建总站。
+
+发布前本地验证：
+
+```bash
+bash ci/build-pages-docs.sh build/pages-site
+test -f build/pages-site/.nojekyll
+test -f build/pages-site/index.html
+test -f build/pages-site/single-exe-classic/index.html
+test -f build/pages-site/single-exe-modules/index.html
+test -f build/pages-site/single-exe-static-modules/index.html
+```
 
 ## macOS 27 说明
 
@@ -119,7 +156,7 @@ runs-on: [self-hosted, macos-27]
   - macOS：`clang++ + libc++`（Homebrew 依赖 ABI 固定；g++ 需自建 libstdc++ 依赖）
   - Linux：`g++ + libstdc++` → `clang++ + libc++`
   - modules 模板固定 `clang++ + libc++`；GCC 不支持 `-stdlib=libc++`。
-- macOS：Homebrew 安装/升级 cmake≥4.4.4、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、bqlog。
+- macOS：Homebrew 安装/升级 cmake≥4.4.4、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、graphviz、bqlog。
 - `bqlog` 是可选依赖；GitHub macOS Homebrew 若没有该 formula，会 warning 并跳过，不会让流水线失败。
 - BqLog 官方安装方式为 `brew install bqlog`，同时支持 **macOS 与 Linux Homebrew**
   （Linuxbrew 默认前缀 `/home/linuxbrew/.linuxbrew`）。CI 会：
