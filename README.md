@@ -8,22 +8,36 @@
 | `single-exe-modules` | C++23 模块单可执行（`import std` + 自研模块 + CMake 原生模块扫描） |
 | `single-exe-static-modules` | `Omni-Stacks` 实际应用：多独立 STATIC 模块 + 单 main（bqlog、Alfred、完整边界/变异/真实数据测试） |
 
-## 在线 Doxygen 文档
+## 在线 API 文档
 
-模板仓库通过 GitHub Actions 自动构建全部模板的 Doxygen，并发布到 GitHub Pages：
+模板仓库通过 GitHub Actions 自动构建全部模板的 Doxygen 与 clang-doc，并发布到
+GitHub Pages。模板根入口仍由 Doxygen 提供，clang-doc 使用稳定的
+`/<template>/clang-doc/` 子路径：
 
 - [模板文档总入口](https://suchaharcan.github.io/CXX-CMake-template/)
-- [single-exe-classic](https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/)
-- [single-exe-modules](https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/)
-- [single-exe-static-modules](https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/)
+- single-exe-classic：[Doxygen](https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/) ·
+  [clang-doc](https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/clang-doc/)
+- single-exe-modules：[Doxygen](https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/) ·
+  [clang-doc](https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/clang-doc/)
+- single-exe-static-modules：[Doxygen](https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/) ·
+  [clang-doc](https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/clang-doc/)
 
 发布流程位于
 [`docs-pages.yml`](.github/workflows/docs-pages.yml)：每次模板、文档构建脚本或说明
 变化时重新生成全部模板，并使用单一 Pages artifact 原子发布。博客和其他网站只需
 链接上述地址，不需要包含模板源码或生成后的 HTML。
 
-发布时会向总入口及全部 Doxygen 子页面统一注入 Umami 追踪脚本，使用与博客相同的
-网站 ID。
+URL 兼容契约固定如下，不能被 clang-doc 接入破坏：
+
+- `/<template>/` 始终是 Doxygen 入口；
+- clang-doc 只使用新增的 `/<template>/clang-doc/` 子路径；
+- Doxygen 页面导航提供 `clang-doc 文档` 跳转，clang-doc 页面导航提供
+  `Doxygen 文档` 返回链接；
+- `ci/verify-pages-site.sh` 在上传 artifact 前逐模板检查两个入口；
+- 构建失败时不会执行部署，GitHub Pages 继续提供上一成功版本。
+
+发布时会向总入口及全部 Doxygen / clang-doc 子页面统一注入 Umami 追踪脚本，
+使用与博客相同的网站 ID。
 
 ## Apple container 构建环境
 

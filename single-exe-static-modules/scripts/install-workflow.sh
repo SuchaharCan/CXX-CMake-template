@@ -53,10 +53,18 @@ copy_data_file Project.json
 copy_data_file Stack.json
 copy_data_file Timers.json
 
+# UiState 是本机短句柄/草稿状态；存在时随用户数据一起保留，缺失则由首次 UI 调用创建。
+if [[ -f "$workflow_dir/Stacks_Tools/data/UiState.json" ]]; then
+  cp -p "$workflow_dir/Stacks_Tools/data/UiState.json" "$stage/data/UiState.json"
+elif [[ -f "$workflow_dir/data/UiState.json" ]]; then
+  cp -p "$workflow_dir/data/UiState.json" "$stage/data/UiState.json"
+fi
+
 # Alfred 元数据、图标、脚本和二进制统一使用插件根目录布局。
 cp "$build_binary" "$stage/Stacks_Tools"
 cp "$project_root/alfred/info.plist" "$stage/info.plist"
 cp "$project_root/icons/"*.png "$stage/icons/"
+ln -s icons/icon.png "$stage/icon.png"
 cp "$project_root/scripts/stacks-filter.zsh" "$stage/scripts/stacks-filter.zsh"
 cp "$project_root/scripts/stacks-action.zsh" "$stage/scripts/stacks-action.zsh"
 if [[ -f "$workflow_dir/prefs.plist" ]]; then
@@ -71,8 +79,8 @@ elif [[ -d "$workflow_dir/Stacks_Tools/log" ]]; then
   ditto "$workflow_dir/Stacks_Tools/log" "$stage/log"
 fi
 printf '' >"$stage/log/.keep"
-chmod 755 "$stage/Stacks_Tools" \
-  "$stage/scripts/stacks-filter.zsh" "$stage/scripts/stacks-action.zsh"
+chmod 755 "$stage/Stacks_Tools" "$stage/scripts/stacks-filter.zsh" \
+  "$stage/scripts/stacks-action.zsh"
 
 /usr/bin/plutil -lint "$stage/info.plist" "$stage/prefs.plist" >/dev/null
 
@@ -80,20 +88,20 @@ chmod 755 "$stage/Stacks_Tools" \
 bash "$project_root/tests/check_workflow_layout.sh" "$stage"
 
 # 备份当前正式文件；备份失败由 set -e 中止，不进入替换阶段。
-for item in info.plist icon.png prefs.plist Stacks_Tools icons data log scripts; do
+for item in info.plist icon.png update.json prefs.plist Stacks_Tools icons data log scripts; do
   source_path="$workflow_dir/$item"
   if [[ -e "$source_path" || -L "$source_path" ]]; then
     ditto "$source_path" "$backup_dir/$item"
   fi
 done
 
-if [[ -e "$workflow_dir/icon.png" || -L "$workflow_dir/icon.png" ]]; then
-  # 旧版本根图标明确移除；新图标只存在于 icons/icon.png。
-  rm -f "$workflow_dir/icon.png"
+# 旧安装可能仍带有 update.json；先备份，再停止随插件分发更新元数据。
+if [[ -e "$workflow_dir/update.json" || -L "$workflow_dir/update.json" ]]; then
+  rm -f -- "$workflow_dir/update.json"
 fi
 
-# 正式替换：逐个移动 stage 项。数据/日志内容已在 stage 中完成迁移。
-for item in info.plist prefs.plist Stacks_Tools icons data log scripts; do
+# 正式替换：逐个移动 stage 项。update.json 只备份，不再进入新安装。
+for item in info.plist icon.png prefs.plist Stacks_Tools icons data log scripts; do
   target_path="$workflow_dir/$item"
   if [[ -e "$target_path" || -L "$target_path" ]]; then
     rm -rf -- "$target_path"

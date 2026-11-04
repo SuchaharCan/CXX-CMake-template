@@ -13,6 +13,10 @@ include_guard(GLOBAL)
 option(CXX_ENABLE_DOCS "Generate API docs targets (clang-doc / Doxygen)" OFF)
 option(CXX_DOC_CLANGDOC "clang-doc backend (LLVM, reads compile_commands.json)" ON)
 option(CXX_DOC_DOXYGEN "Doxygen backend (docs/Doxyfile.in)" ON)
+set(CXX_DOC_CLANGDOC_BUILD_TARGETS "" CACHE STRING
+    "Targets built before clang-doc so C++ module .modmap files exist")
+set(CXX_DOC_CLANGDOC_SOURCES "" CACHE STRING
+    "Project sources processed by clang-doc; empty means every compile_commands TU")
 
 # -----------------------------------------------------------------------------
 # cxx_register_docs_targets()
@@ -35,15 +39,49 @@ function(cxx_register_docs_targets)
     if(NOT _clang_doc)
       find_program(_clang_doc clang-doc)
     endif()
-    # compile_commands.json 由 Ninja 在首次构建时生成，故此处只检查工具本身
+    # 显式源码模式会先构建调用方登记的目标，确保 compile_commands 引用的
+    # .modmap 已经存在；普通模板留空时仍可回退到 all-TUs。
     if(_clang_doc)
-      add_custom_target(docs-clangdoc
-        COMMAND "${_clang_doc}" --executor=all-TUs --format=html
-          "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
-          "${CMAKE_BINARY_DIR}/compile_commands.json"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
-        VERBATIM)
+      if(CXX_DOC_CLANGDOC_SOURCES)
+        find_program(_clangdoc_python NAMES python3 REQUIRED)
+        set(_clangdoc_tooling_dir "${CMAKE_BINARY_DIR}/docs/clang-doc-tooling")
+        set(_clangdoc_db "${_clangdoc_tooling_dir}/compile_commands.json")
+        add_custom_target(docs-clangdoc-db
+          COMMAND "${CMAKE_COMMAND}" -E make_directory "${_clangdoc_tooling_dir}"
+          COMMAND "${_clangdoc_python}"
+            "${CMAKE_SOURCE_DIR}/cmake/filter_clang_doc_compile_commands.py"
+            "${CMAKE_BINARY_DIR}/compile_commands.json"
+            "${_clangdoc_db}"
+            ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+            --
+            ${CXX_DOC_CLANGDOC_SOURCES}
+          DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+            "${CMAKE_BINARY_DIR}/compile_commands.json"
+          COMMENT "filtering compile_commands.json for clang-doc"
+          VERBATIM)
+        add_custom_target(docs-clangdoc
+          COMMAND "${CMAKE_COMMAND}" -E remove_directory
+            "${CMAKE_BINARY_DIR}/docs/clang-doc"
+          COMMAND "${_clang_doc}" --format=html -p "${_clangdoc_tooling_dir}"
+            "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
+            ${CXX_DOC_CLANGDOC_SOURCES}
+          DEPENDS docs-clangdoc-db
+          COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
+          VERBATIM)
+      else()
+        set(_clangdoc_mode_args --executor=all-TUs --format=html)
+        set(_clangdoc_inputs "${CMAKE_BINARY_DIR}/compile_commands.json")
+        add_custom_target(docs-clangdoc
+          COMMAND "${CMAKE_COMMAND}" -E remove_directory
+            "${CMAKE_BINARY_DIR}/docs/clang-doc"
+          COMMAND "${_clang_doc}" ${_clangdoc_mode_args}
+            "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
+            ${_clangdoc_inputs}
+          DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+          COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
+          VERBATIM)
+      endif()
       list(APPEND _docs_deps docs-clangdoc)
       cxx_msg(grass "docs-clangdoc target (LLVM clang-doc)")
     else()

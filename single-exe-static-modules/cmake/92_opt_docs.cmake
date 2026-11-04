@@ -43,25 +43,47 @@ function(cxx_register_docs_targets)
     # 登记的目标，否则 clang-doc 会读到 compile_commands 但无法加载 import std。
     if(_clang_doc)
       if(CXX_DOC_CLANGDOC_SOURCES)
-        # 显式只处理项目源码，排除构建目录生成的 std.cppm/bq.log.cppm。
-        set(_clangdoc_mode_args --format=html -p "${CMAKE_BINARY_DIR}")
-        set(_clangdoc_inputs ${CXX_DOC_CLANGDOC_SOURCES})
+        # CMake 模块编译会额外写入扫描 .bmi 条目；clang-doc 只需要正常 .o 条目。
+        find_program(_clangdoc_python NAMES python3 REQUIRED)
+        set(_clangdoc_tooling_dir "${CMAKE_BINARY_DIR}/docs/clang-doc-tooling")
+        set(_clangdoc_db "${_clangdoc_tooling_dir}/compile_commands.json")
+        add_custom_target(docs-clangdoc-db
+          COMMAND "${CMAKE_COMMAND}" -E make_directory "${_clangdoc_tooling_dir}"
+          COMMAND "${_clangdoc_python}"
+            "${CMAKE_SOURCE_DIR}/cmake/filter_clang_doc_compile_commands.py"
+            "${CMAKE_BINARY_DIR}/compile_commands.json"
+            "${_clangdoc_db}"
+            ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+            --
+            ${CXX_DOC_CLANGDOC_SOURCES}
+          DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+            "${CMAKE_BINARY_DIR}/compile_commands.json"
+          COMMENT "filtering compile_commands.json for clang-doc"
+          VERBATIM)
+        add_custom_target(docs-clangdoc
+          COMMAND "${CMAKE_COMMAND}" -E remove_directory
+            "${CMAKE_BINARY_DIR}/docs/clang-doc"
+          COMMAND "${_clang_doc}" --format=html -p "${_clangdoc_tooling_dir}"
+            "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
+            ${CXX_DOC_CLANGDOC_SOURCES}
+          DEPENDS docs-clangdoc-db
+          COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
+          VERBATIM)
       else()
         # 无模块的普通模板仍可按 all-TUs 模式处理完整数据库。
         set(_clangdoc_mode_args --executor=all-TUs --format=html)
         set(_clangdoc_inputs "${CMAKE_BINARY_DIR}/compile_commands.json")
+        add_custom_target(docs-clangdoc
+          COMMAND "${CMAKE_COMMAND}" -E remove_directory
+            "${CMAKE_BINARY_DIR}/docs/clang-doc"
+          COMMAND "${_clang_doc}" ${_clangdoc_mode_args}
+            "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
+            ${_clangdoc_inputs}
+          DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
+          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+          COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
+          VERBATIM)
       endif()
-      add_custom_target(docs-clangdoc
-        COMMAND "${CMAKE_COMMAND}" -E remove_directory
-          "${CMAKE_BINARY_DIR}/docs/clang-doc"
-        COMMAND "${_clang_doc}" ${_clangdoc_mode_args}
-          "--output=${CMAKE_BINARY_DIR}/docs/clang-doc"
-          ${_clangdoc_inputs}
-        DEPENDS ${CXX_DOC_CLANGDOC_BUILD_TARGETS}
-        # @CMakeFiles/...modmap 使用相对路径，必须从构建目录解析。
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        COMMENT "clang-doc → ${CMAKE_BINARY_DIR}/docs/clang-doc"
-        VERBATIM)
       list(APPEND _docs_deps docs-clangdoc)
       cxx_msg(grass "docs-clangdoc target (LLVM clang-doc)")
     else()

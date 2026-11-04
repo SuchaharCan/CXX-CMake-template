@@ -138,4 +138,12 @@ if(TARGET fuzz_parse_price)
     "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/src")
 endif()
 
+# clang-doc 显式处理模块源码，并先构建 Ticket 生成 import std/自研模块所需 modmap。
+set(CXX_DOC_CLANGDOC_BUILD_TARGETS ticket_mods Ticket)
+set(CXX_DOC_CLANGDOC_SOURCES
+  "${PROJECT_SOURCE_DIR}/src/AirlineTicket.cppm"
+  "${PROJECT_SOURCE_DIR}/src/modern_paradigm.cppm"
+  "${PROJECT_SOURCE_DIR}/src/ScenarioLog.cxx"
+  "${PROJECT_SOURCE_DIR}/src/AirlineTicketMain.cxx")
+
 cxx_phase_finish()

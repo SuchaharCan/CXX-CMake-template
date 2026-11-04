@@ -26,6 +26,11 @@ toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB="
 
 # ---- 本地运行/CI 可覆盖参数 ----------------------------------------------
 builddir := "build"
+release_builddir := "build/release"
+release_binary := "build/release/Stacks_Tools"
+release_cxx_flags := "-Os -DNDEBUG -flto=thin -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections"
+release_link_flags := "-flto=thin -Wl,-dead_strip"
+llvm_strip := env_var_or_default("LLVM_STRIP", "llvm-strip")
 jobs := env_var_or_default("JOBS", num_cpus())
 # Alfred workflow 路径由 HOME 派生；用户可用 STACKS_WORKFLOW_DIR 指向其他安装。
 default_workflow_dir := env_var_or_default("STACKS_WORKFLOW_DIR", env_var("HOME") + "/Library/Application Support/Alfred/Alfred.alfredpreferences/workflows/user.workflow.55BE3092-6341-4EB7-8A16-0AD3648B7B73")
@@ -53,6 +58,7 @@ doctor:
     @echo "ninja: $(ninja --version)"
     @echo "just:  $(just --version)"
     @echo "jq:    $(jq --version)"
+    @echo "strip: $(command -v {{llvm_strip}})"
     @test -x /usr/bin/osascript && echo "osascript: ok"
 
 # 配置（auto 在 macOS = clang++ + libc++）；*ARGS 可覆盖任意 CMake option。
@@ -70,6 +76,16 @@ build-clang:
     @CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" {{cmake_runner}} "CMake configure (clang/libc++)" -- cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
     @{{cmake_runner}} "CMake build (clang/libc++)" -- cmake --build build/clang -j{{jobs}}
     @just ccache-stats
+
+# 生成发布用最小体积二进制：-Os + ThinLTO + dead strip，最终移除除动态导入外的符号。
+release-binary:
+    @command -v "{{llvm_strip}}" >/dev/null || { echo "missing {{llvm_strip}} (brew install llvm)"; exit 1; }
+    @{{cmake_runner}} "CMake configure (min-size release)" -- cmake -S . -B {{release_builddir}} -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON -DCXX_ENABLE_CLANG_TIDY=OFF -DCXX_ENABLE_CLANG_FORMAT=OFF -DCXX_ENABLE_GTEST=OFF -DCXX_ENABLE_BENCHMARK=OFF -DCXX_ENABLE_DOCS=OFF "-DCMAKE_CXX_FLAGS_MINSIZEREL={{release_cxx_flags}}" "-DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL={{release_link_flags}}"
+    @{{cmake_runner}} "CMake build (min-size release)" -- cmake --build {{release_builddir}} --target Stacks_Tools -j{{jobs}}
+    @{{llvm_strip}} --strip-all "{{release_binary}}"
+    @/usr/bin/codesign --force --sign - --identifier Stacks_Tools --timestamp=none "{{release_binary}}"
+    @bash tests/check_release_binary.sh "{{release_binary}}"
+    @ls -lh "{{release_binary}}"
 
 # 源码自动格式化（含 .cppm）
 fmt:
@@ -151,8 +167,8 @@ local-ci: fmt
     just smoke
     just package
 
-# 生成无源码 Alfred workflow 包；stage 先由 layout 测试验证，再检查 package 不含 data/log。
-package: build
+# 生成无源码的最小体积 Alfred workflow 包；不含 update.json、data/log。
+package: release-binary
     bash scripts/package-workflow.sh
     @bash tests/check_workflow_layout.sh dist/Omni-Stacks package
     @set -o pipefail; bash tests/package_first_run_smoke.sh 2>&1 | tee tests/logs/package-first-run.log
@@ -162,6 +178,7 @@ package: build
 install workflow_dir=default_workflow_dir: build
     bash scripts/install-workflow.sh "{{workflow_dir}}"
     @STACKS_WORKFLOW_DIR="{{workflow_dir}}" "{{workflow_dir}}/Stacks_Tools" ui "" | sed '/\[Bq\]/d' | jq -e '.items | length > 0' >/dev/null
+    @STACKS_WORKFLOW_DIR="{{workflow_dir}}" "{{workflow_dir}}/Stacks_Tools" ui "cf" | sed '/\[Bq\]/d' | jq -e '.items[] | select(.title == "路径索引移除说明 / Path index removal")' >/dev/null
     @echo "install ok: {{workflow_dir}}"
 
 # 安装后自检
@@ -169,6 +186,8 @@ verify-install workflow_dir=default_workflow_dir:
     @bash tests/check_workflow_layout.sh "{{workflow_dir}}"
     @plutil -lint "{{workflow_dir}}/info.plist"
     @STACKS_WORKFLOW_DIR="{{workflow_dir}}" "{{workflow_dir}}/Stacks_Tools" ui "" | sed '/\[Bq\]/d' | jq -e '.items | length > 0' >/dev/null
+    @STACKS_WORKFLOW_DIR="{{workflow_dir}}" "{{workflow_dir}}/Stacks_Tools" ui "cf" | sed '/\[Bq\]/d' | jq -e '.items[] | select(.title == "路径索引移除说明 / Path index removal")' >/dev/null
+    @STACKS_WORKFLOW_DIR="{{workflow_dir}}" "{{workflow_dir}}/scripts/stacks-filter.zsh" "cf" | sed '/\[Bq\]/d' | jq -e '.items[] | select(.title == "路径索引移除说明 / Path index removal")' >/dev/null
     @echo "verify-install ok"
 
 # 只读检查真实工作区 JSON 与任务索引

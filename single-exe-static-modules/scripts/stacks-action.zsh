@@ -38,6 +38,12 @@ play_feedback_sound() {
 trace "0.watermark=Omni-Stacks developer=https://suchaharcan.github.io/"
 trace "1.action_token=<$token>"
 
+# 说明/状态条目不应进入领域 action；避免 Alfred 把空参数显示成 unknown action。
+if [[ -z "$token" ]]; then
+  print -r -- "该条目仅用于说明，请直接继续输入或选择上方可执行条目"
+  exit 0
+fi
+
 # 二进制缺失是可诊断的安装错误，返回失败音效并保留可读文本。
 if [[ ! -x "$binary" ]]; then
   play_feedback_sound /System/Library/Sounds/Basso.aiff

@@ -126,7 +126,7 @@ struct TaskPatch {
 /// 任务列表的过滤条件；默认保留已完成任务、排除已归档任务。
 struct TaskListOptions {
   std::optional<TargetId> target;  ///< 项目、清单或特殊值 inbox。
-  std::string query;               ///< 标题/描述/ID/项目/清单的模糊关键词。
+  std::string query;               ///< 标题优先、描述其次的模糊关键词。
   bool include_done = true;        ///< 是否显示已完成任务。
   bool include_archived = false;   ///< 是否显示 archived 非空任务。
 };
@@ -976,17 +976,70 @@ std::expected<TaskRecord, TaskError> save_task(TaskId task_id, json& raw,
       .transform([](LoadedTask&& loaded) { return std::move(loaded.record); });
 }
 
-/// 对标题、描述、ID、项目名和清单名执行不区分大小写的子串匹配。
-bool task_matches_query(const TaskRecord& task, std::string_view query) {
-  // 空 query 是通配；搜索只针对用户可见字段，不扫描 JSON 内部键。
-  if (query.empty()) {
+/**
+ * @brief 判断 needle 是否为 haystack 的有序子序列。
+ * @note 用于用户漏打中间字符的场景，例如 `prjone` 匹配 `Project One`。
+ */
+bool fuzzy_subsequence(std::string_view haystack, std::string_view needle) {
+  if (needle.empty()) {
     return true;
   }
-  const std::string needle = lower_ascii(std::string(query));
-  const std::string haystack =
-      lower_ascii(std::format("{} {} {} {} {}", task.title, task.description, task.id,
-                              task.project_title, task.board_title));
-  return haystack.find(needle) != std::string::npos;
+  std::size_t cursor = 0;
+  for (const char character : haystack) {
+    if (cursor < needle.size() && character == needle[cursor]) {
+      ++cursor;
+    }
+  }
+  return cursor == needle.size();
+}
+
+/**
+ * @brief 计算标题/描述模糊匹配得分，分值越高越靠前。
+ *
+ * 排序优先级固定为：
+ * 1. 标题完全等于关键词；
+ * 2. 标题前缀、子串、子序列；
+ * 3. 描述完全等于关键词；
+ * 4. 描述前缀、子串、子序列。
+ *
+ * 因此“标题命中”始终排在“仅描述命中”之前；返回 0 表示不匹配。
+ */
+int task_match_score(const TaskRecord& task, std::string_view query) {
+  if (query.empty()) {
+    return 1;
+  }
+  const std::string needle = lower_ascii(trim(std::string(query)));
+  if (needle.empty()) {
+    return 1;
+  }
+  const std::string title = lower_ascii(task.title);
+  const std::string description = lower_ascii(task.description);
+
+  if (title == needle) {
+    return 800;
+  }
+  if (title.starts_with(needle)) {
+    return 700;
+  }
+  if (title.find(needle) != std::string::npos) {
+    return 600;
+  }
+  if (fuzzy_subsequence(title, needle)) {
+    return 500;
+  }
+  if (description == needle) {
+    return 400;
+  }
+  if (description.starts_with(needle)) {
+    return 300;
+  }
+  if (description.find(needle) != std::string::npos) {
+    return 200;
+  }
+  if (fuzzy_subsequence(description, needle)) {
+    return 100;
+  }
+  return 0;
 }
 
 }  // namespace
@@ -1160,9 +1213,12 @@ std::expected<TaskResult, TaskError> create_task(TargetId target_id, TaskInput i
 
   // 只在操作结束后记录一次输入/输出，避免错误分支重复刷日志。
   const bool ok = operation.has_value();
-  const std::string output = ok ? std::format("id={} file={} kind={}", operation->task_id.value,
-                                              operation->task_file.string(), operation->target_kind)
-                                : std::string(task_error_message(operation.error()));
+  const std::string output =
+      ok ? std::format("id={} kind={} member={} file={}", operation->task_id.value,
+                       operation->target_kind,
+                       operation->target_kind == "project" ? "backlog" : "stack.tasks",
+                       operation->task_file.string())
+         : std::string(task_error_message(operation.error()));
   interface_log::record(interface_log::ApiName("TaskManager::create_task"),
                         interface_log::LogText(input_log), interface_log::LogText(output),
                         ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
@@ -1322,7 +1378,8 @@ std::expected<std::vector<TaskRecord>, TaskError> list_tasks(const DatabasePaths
       }
     }
 
-    // 过滤顺序：完成态 → 归档态 → 目标层级 → 模糊关键词。
+    // 过滤顺序：完成态 → 归档态 → 目标层级 → 标题/描述模糊匹配。
+    std::unordered_map<std::string, int> match_scores;
     std::erase_if(*records, [&](const TaskRecord& task) {
       if (!options.include_done && task.done) {
         return true;
@@ -1341,11 +1398,21 @@ std::expected<std::vector<TaskRecord>, TaskError> list_tasks(const DatabasePaths
           return true;
         }
       }
-      return !task_matches_query(task, options.query);
+      const int score = task_match_score(task, options.query);
+      if (score == 0) {
+        return true;
+      }
+      match_scores[task.id] = score;
+      return false;
     });
 
-    // 有截止日期的任务优先，其次按日期和标题；空日期排在最后。
-    std::ranges::sort(*records, [](const TaskRecord& left, const TaskRecord& right) {
+    // 有搜索词时先按标题/描述命中层级排序；同层级再沿用截止日期与标题的稳定顺序。
+    std::ranges::sort(*records, [&](const TaskRecord& left, const TaskRecord& right) {
+      const int left_score = match_scores[left.id];
+      const int right_score = match_scores[right.id];
+      if (left_score != right_score) {
+        return left_score > right_score;
+      }
       return std::tuple(left.due_date.empty(), left.due_date, left.title) <
              std::tuple(right.due_date.empty(), right.due_date, right.title);
     });
@@ -1355,8 +1422,9 @@ std::expected<std::vector<TaskRecord>, TaskError> list_tasks(const DatabasePaths
   const bool ok = operation.has_value();
   interface_log::record(
       interface_log::ApiName("TaskManager::list_tasks"), interface_log::LogText(input),
-      interface_log::LogText(ok ? std::format("tasks={}", operation->size())
-                                : std::string(task_error_message(operation.error()))),
+      interface_log::LogText(
+          ok ? std::format("tasks={} rank=title_then_description", operation->size())
+             : std::string(task_error_message(operation.error()))),
       ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
   return operation;
 }
@@ -1469,13 +1537,36 @@ std::expected<TaskRecord, TaskError> update_task(TaskId task_id, const TaskPatch
   }();
 
   const bool ok = operation.has_value();
+  std::string changed_fields;
+  const auto append_change = [&](std::string_view field) {
+    if (!changed_fields.empty()) {
+      changed_fields += ',';
+    }
+    changed_fields += field;
+  };
+  if (patch.title) {
+    append_change("title");
+  }
+  if (patch.description) {
+    append_change("description");
+  }
+  if (patch.clear_start_date || patch.start_date) {
+    append_change("startdate");
+  }
+  if (patch.clear_due_date || patch.due_date) {
+    append_change("duedate");
+  }
+  if (patch.clear_priority || patch.priority) {
+    append_change("priority");
+  }
   interface_log::record(
       interface_log::ApiName("TaskManager::update_task"),
       interface_log::LogText(std::format(
           "task_id={} title={} description={} start={} due={} priority={}", task_id.value,
           patch.title.value_or(""), patch.description.value_or(""), patch.start_date.value_or(""),
           patch.due_date.value_or(""), patch.priority.value_or(""))),
-      interface_log::LogText(ok ? std::format("title={}", operation->title)
+      interface_log::LogText(ok ? std::format("changed={} record_title={} updated=set",
+                                              changed_fields, operation->title)
                                 : std::string(task_error_message(operation.error()))),
       ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
   return operation;
@@ -1486,7 +1577,14 @@ std::expected<TaskRecord, TaskError> set_due_date(TaskId task_id, std::string du
   // 单字段 setter 只构造最小 patch，日期校验与落盘仍由 update_task 统一负责。
   TaskPatch patch;
   patch.due_date = std::move(due_date);
-  return update_task(task_id, patch, paths);
+  auto result = update_task(task_id, patch, paths);
+  interface_log::record(
+      interface_log::ApiName("TaskManager::set_due_date"),
+      interface_log::LogText(std::format("task_id={} value={}", task_id.value, *patch.due_date)),
+      interface_log::LogText(result ? std::format("record_duedate={}", result->due_date)
+                                    : std::string(task_error_message(result.error()))),
+      result ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+  return result;
 }
 
 std::expected<TaskRecord, TaskError> set_start_date(TaskId task_id, std::string start_date,
@@ -1494,7 +1592,14 @@ std::expected<TaskRecord, TaskError> set_start_date(TaskId task_id, std::string 
   // 单字段 setter 不绕过锁、日期规范化和原子写入。
   TaskPatch patch;
   patch.start_date = std::move(start_date);
-  return update_task(task_id, patch, paths);
+  auto result = update_task(task_id, patch, paths);
+  interface_log::record(
+      interface_log::ApiName("TaskManager::set_start_date"),
+      interface_log::LogText(std::format("task_id={} value={}", task_id.value, *patch.start_date)),
+      interface_log::LogText(result ? std::format("record_startdate={}", result->start_date)
+                                    : std::string(task_error_message(result.error()))),
+      result ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+  return result;
 }
 
 std::expected<TaskRecord, TaskError> set_schedule(TaskId task_id, std::string start_date,
@@ -1504,7 +1609,16 @@ std::expected<TaskRecord, TaskError> set_schedule(TaskId task_id, std::string st
   TaskPatch patch;
   patch.start_date = std::move(start_date);
   patch.due_date = std::move(due_date);
-  return update_task(task_id, patch, paths);
+  auto result = update_task(task_id, patch, paths);
+  interface_log::record(
+      interface_log::ApiName("TaskManager::set_schedule"),
+      interface_log::LogText(std::format("task_id={} start={} due={}", task_id.value,
+                                         *patch.start_date, *patch.due_date)),
+      interface_log::LogText(
+          result ? std::format("record={}->{}", result->start_date, result->due_date)
+                 : std::string(task_error_message(result.error()))),
+      result ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+  return result;
 }
 
 std::expected<TaskRecord, TaskError> set_task_done(TaskId task_id, bool done,
@@ -1539,7 +1653,10 @@ std::expected<TaskRecord, TaskError> set_task_done(TaskId task_id, bool done,
   interface_log::record(
       interface_log::ApiName("TaskManager::set_task_done"),
       interface_log::LogText(std::format("task_id={} done={}", task_id.value, done)),
-      interface_log::LogText(ok ? "updated" : std::string(task_error_message(operation.error()))),
+      interface_log::LogText(ok ? std::format("done={} progress={} completed={}", operation->done,
+                                              operation->progress,
+                                              operation->completed.empty() ? "clear" : "set")
+                                : std::string(task_error_message(operation.error()))),
       ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
   return operation;
 }
@@ -1562,7 +1679,8 @@ std::expected<TaskRecord, TaskError> archive_task(TaskId task_id, const Database
   interface_log::record(
       interface_log::ApiName("TaskManager::archive_task"),
       interface_log::LogText(std::format("task_id={}", task_id.value)),
-      interface_log::LogText(ok ? "archived" : std::string(task_error_message(operation.error()))),
+      interface_log::LogText(ok ? std::format("archived={} file_kept=true", operation->archived)
+                                : std::string(task_error_message(operation.error()))),
       ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
   return operation;
 }
@@ -1659,12 +1777,13 @@ std::expected<DeleteResult, TaskError> delete_task(TaskId task_id, const Databas
     return DeleteResult{task_id, trash_file, pending.size()};
   }();
   const bool ok = operation.has_value();
-  interface_log::record(
-      interface_log::ApiName("TaskManager::delete_task"),
-      interface_log::LogText(std::format("task_id={}", task_id.value)),
-      interface_log::LogText(ok ? std::format("trash={}", operation->trash_file.string())
-                                : std::string(task_error_message(operation.error()))),
-      ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+  interface_log::record(interface_log::ApiName("TaskManager::delete_task"),
+                        interface_log::LogText(std::format("task_id={}", task_id.value)),
+                        interface_log::LogText(
+                            ok ? std::format("refs={} file_to={}", operation->project_files_updated,
+                                             operation->trash_file.string())
+                               : std::string(task_error_message(operation.error()))),
+                        ok ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
   return operation;
 }
 
@@ -1814,37 +1933,42 @@ std::expected<StopTimerResult, TaskError> stop_timer(TaskId task_id, const Datab
 }
 
 std::expected<std::vector<TimerRecord>, TaskError> list_timers(const DatabasePaths& paths) {
-  std::vector<TimerRecord> result;
-  // 首次运行没有 Timers.json 是合法空状态，不创建文件。
-  if (!fs::exists(paths.timer_db)) {
-    return result;
-  }
-  const auto timers = load_json(paths.timer_db, TaskError::timer_db_unreadable);
-  if (!timers || !timers->is_object() || !timers->contains("timers") ||
-      !(*timers)["timers"].is_object()) {
-    return std::unexpected(TaskError::timer_db_unreadable);
-  }
-  for (const auto& [task_id, value] : (*timers)["timers"].items()) {
-    if (!value.is_object()) {
-      continue;
+  const auto operation = [&]() -> std::expected<std::vector<TimerRecord>, TaskError> {
+    std::vector<TimerRecord> result;
+    // 首次运行没有 Timers.json 是合法空状态，不创建文件。
+    if (!fs::exists(paths.timer_db)) {
+      return result;
     }
-    result.push_back({
-        .task_id = task_id,
-        .title = string_value(value, "title"),
-        .started_at = string_value(value, "started_at"),
-        .start_epoch = value.contains("start_epoch") && value["start_epoch"].is_number_integer()
-                           ? value["start_epoch"].get<std::int64_t>()
-                           : 0,
-        .task_file = string_value(value, "task_file"),
-    });
-  }
-  // 按 started_at 排序，使 Alfred 列表与用户开始计时的顺序一致。
-  std::ranges::sort(result, {}, &TimerRecord::started_at);
-  interface_log::record(interface_log::ApiName("TaskManager::list_timers"),
-                        interface_log::LogText(""),
-                        interface_log::LogText(std::format("timers={}", result.size())),
-                        interface_log::ApiStatus::ok);
-  return result;
+    const auto timers = load_json(paths.timer_db, TaskError::timer_db_unreadable);
+    if (!timers || !timers->is_object() || !timers->contains("timers") ||
+        !(*timers)["timers"].is_object()) {
+      return std::unexpected(TaskError::timer_db_unreadable);
+    }
+    for (const auto& [task_id, value] : (*timers)["timers"].items()) {
+      if (!value.is_object()) {
+        continue;
+      }
+      result.push_back({
+          .task_id = task_id,
+          .title = string_value(value, "title"),
+          .started_at = string_value(value, "started_at"),
+          .start_epoch = value.contains("start_epoch") && value["start_epoch"].is_number_integer()
+                             ? value["start_epoch"].get<std::int64_t>()
+                             : 0,
+          .task_file = string_value(value, "task_file"),
+      });
+    }
+    // 按 started_at 排序，使 Alfred 列表与用户开始计时的顺序一致。
+    std::ranges::sort(result, {}, &TimerRecord::started_at);
+    return result;
+  }();
+  interface_log::record(
+      interface_log::ApiName("TaskManager::list_timers"),
+      interface_log::LogText(std::format("timer_db={}", paths.timer_db.string())),
+      interface_log::LogText(operation ? std::format("timers={}", operation->size())
+                                       : std::string(task_error_message(operation.error()))),
+      operation ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+  return operation;
 }
 
 std::expected<std::string, TaskError> normalize_date(std::string_view value,

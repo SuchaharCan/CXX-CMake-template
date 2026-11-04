@@ -116,4 +116,12 @@ cxx_add_fuzzer(fuzz_parse_price
   CORPUS "${CMAKE_SOURCE_DIR}/fuzz/corpus/fuzz_parse_price"
 )
 
+# clang-doc 显式处理应用源码，并先构建 step1 生成 compile_commands 所需的 modmap。
+set(CXX_DOC_CLANGDOC_BUILD_TARGETS step1)
+set(CXX_DOC_CLANGDOC_SOURCES
+  "${PROJECT_SOURCE_DIR}/src/tutorial.cxx"
+  "${PROJECT_SOURCE_DIR}/src/TutorialMath.cxx"
+  "${PROJECT_SOURCE_DIR}/src/ModernParadigm.cxx"
+  "${PROJECT_SOURCE_DIR}/src/ScenarioLog.cxx")
+
 cxx_phase_finish()

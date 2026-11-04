@@ -20,7 +20,7 @@ include(cmake/00_core_compiler.cmake)
 
 project(
   OmniStacksStaticModules
-  VERSION 2.0.0
+  VERSION 2.1.0
   DESCRIPTION "Omni-Stacks：Stacks 2 Alfred task core（C++26 static modules / Ninja / Clang / libc++）"
   LANGUAGES CXX
 )
@@ -152,7 +152,13 @@ endif()
 
 # clang-doc 消费含 @.modmap 参数的 compile_commands.json；先构建所有会进入
 # 文档库的模块目标，确保 std/bqlog/业务模块的模块映射在文档阶段已存在。
-set(CXX_DOC_CLANGDOC_BUILD_TARGETS Stacks_Tools)
+set(CXX_DOC_CLANGDOC_BUILD_TARGETS
+  interface_log
+  project_sync
+  task_manager
+  reminder_sync
+  workflow_ui
+  Stacks_Tools)
 set(CXX_DOC_CLANGDOC_SOURCES
   "${PROJECT_SOURCE_DIR}/modules/interface_log/include/InterfaceLog.cppm"
   "${PROJECT_SOURCE_DIR}/modules/project_sync/include/ProjectSync.cppm"

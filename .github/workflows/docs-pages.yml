@@ -1,16 +1,16 @@
 # =============================================================================
-# GitHub Actions —— 模板 Doxygen GitHub Pages
+# GitHub Actions —— 模板 Doxygen + clang-doc GitHub Pages
 #
 # 方案 A：
-#   - 一次构建全部模板的 Doxygen；
+#   - 一次构建全部模板的 Doxygen 与 clang-doc；
 #   - 汇总为单一 Pages artifact；
-#   - 根首页链接 /<template>/；
+#   - Doxygen 位于 /<template>/，clang-doc 位于 /<template>/clang-doc/；
 #   - 博客只需要链接 GitHub Pages URL。
 #
-# 使用 macOS 以兼容 single-exe-modules/static-modules。只构建 Doxygen，
+# 使用 macOS 以兼容 single-exe-modules/static-modules 的 C++ 模块映射。
 # 不运行测试和真实数据操作。
 # =============================================================================
-name: Template Doxygen Pages
+name: Template API Docs Pages
 
 on:
   push:
@@ -33,12 +33,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: template-doxygen-pages
+  group: template-api-docs-pages
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build Doxygen site
+    name: Build API documentation site
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -53,12 +53,16 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Build all template Doxygen sites
+      - name: Build all template API documentation sites
         shell: bash
         run: |
           set -euo pipefail
           PAGES_BUILD_ROOT="$RUNNER_TEMP/pages-build" \
             bash ci/build-pages-docs.sh "$RUNNER_TEMP/pages-site"
+
+      - name: Verify stable documentation URLs
+        shell: bash
+        run: bash ci/verify-pages-site.sh "$RUNNER_TEMP/pages-site"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

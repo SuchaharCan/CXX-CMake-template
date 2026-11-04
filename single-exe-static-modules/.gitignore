@@ -69,3 +69,7 @@ CMakeUserPresets.json
 .env
 .env.*
 !.env.example
+
+# Alfred 短句柄/草稿属于本机运行状态，发布包和源码仓库都不携带。
+/data/UiState.json
+/data/.stacks-tools.lock

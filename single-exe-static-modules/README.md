@@ -7,9 +7,9 @@
 
 核心能力：
 
-- 保存/刷新 Stacks 工作区路径；
-- 向项目、Stack 或收件箱创建任务；
-- 搜索、查看、编辑任务标题与描述；
+- 保存/刷新/诊断/移除 Stacks 工作区路径；
+- 向项目、Stack 或收件箱创建任务，单输入框录入五字段并自动提供 today/low；
+- 按标题优先、描述其次模糊搜索，查看和编辑任务；
 - 设置开始日期、截止日期和完成状态；
 - 跨全部已保存工作区聚合本周截止任务；
 - 启动/停止计时并写入 Stacks `timelogs`；
@@ -29,7 +29,7 @@
 
 ```text
 InterfaceLog (STATIC)    bqlog 文件日志 + 1000 条内存环形日志
-ProjectSync  (STATIC)    .project 扫描、Project/Stack 索引、原子重建
+ProjectSync  (STATIC)    工作区有效性、路径索引移除、Project/Stack 索引
 TaskManager  (STATIC)    任务 CRUD、日期、完成、周查询、计时、归档/删除
 ReminderSync (STATIC)    Reminders / OmniFocus AppleScript 同步
 WorkflowUI   (STATIC)    Alfred Script Filter JSON 与 action token 分发
@@ -63,10 +63,10 @@ build/docs/doxygen/html/index.html
 build/docs/clang-doc/html/index.html
 ```
 
-`docs-clangdoc` 会先构建模块目标，再从构建目录执行 clang-doc，确保
-`compile_commands.json` 中的 `.modmap` 相对路径存在且可解析；它只处理项目源码，
-不会把生成的 `std.cppm`/`bq.log.cppm` 当作文档输入。Doxygen 与 clang-doc
-两个 HTML 入口都会生成。
+`docs-clangdoc` 会先构建模块目标，再把 `compile_commands.json` 过滤为所选目标
+和项目源码的正常 `.o` 条目，确保 `.modmap` 存在且不会误选 CMake 的扫描临时项。
+生成的 `std.cppm`/`bq.log.cppm` 不作为直接文档输入；clang-doc 仍按 import 关系
+为 `std` 等依赖生成映射页。Doxygen 与 clang-doc 两个 HTML 入口都会生成。
 
 ## LLDB 调试
 
@@ -92,7 +92,7 @@ just smoke
 
 所有完整 `just` 命令可用 `just --list` 查看，包括：
 
-- `configure`、`build`、`build-clang`、`fmt`、`check`
+- `configure`、`build`、`build-clang`、`release-binary`、`fmt`、`check`
 - `test`、`parallel-test`、`mutation-test`、`real-data-smoke`、`smoke`
 - `install-layout-test`
 - `docs`、`uml`、`local-ci`
@@ -106,13 +106,12 @@ just smoke
 | 输入                               | 行为                                                                                        |
 | ---------------------------------- | ------------------------------------------------------------------------------------------- |
 | `s`                                | 第一行“所有可用操作”，其后列出项目/清单                                                     |
-| `s 标题\|描述\|开始\|截止\|优先级` | 每个项目/清单显示完整参数，回车即创建                                                       |
 | `s ap` / `s add-path`              | 添加新路径                                                                                  |
 | `s rl` / `s reload`                | 重载全部已保存路径，不再弹目录选择器                                                        |
-| `s cf` / `s config`                | 查看路径配置，可分别添加或重载                                                              |
-| `s i` / `s inbox`                  | 先选工作区，进入后直接列 Inbox 任务；输入即模糊匹配，无匹配自动进入新建；直接跟文本会被屏蔽 |
-| `s v` / `s view`                   | 模糊筛选项目/清单 → 进入任务页 → 模糊筛选任务；无匹配进入新建，列表与详情均可返回上一级     |
-| `s t 关键词` / `s tasks`           | 跨工作区搜索任务                                                                            |
+| `s cf` / `s config`                | 列出全部路径、有效性和项目数；回车进入移除索引确认，不删除工作区文件                        |
+| `s i` / `s inbox`                  | 选工作区 → 回车查看 Inbox 任务；输入五字段后切换为六行创建面板                              |
+| `s v` / `s view`                   | 项目/清单 → 回车查看任务；输入五字段后切换为六行创建面板 → 任务详情                         |
+| `s t 关键词` / `s tasks`           | 跨工作区按标题优先、描述其次搜索任务                                                        |
 | `s w` / `s week`                   | 所有已保存路径下本周截止任务                                                                |
 | `s tm` / `s timers`                | 查看运行中计时并停止                                                                        |
 
@@ -120,8 +119,17 @@ just smoke
 优先级、可恢复删除和提醒同步。优先级接受 `low/低`、`medium/中`、
 `high/高`、`critical/紧急`。
 
+短输入键显示为 `task:✅xxxxxxxx ✅`、`board:✅xxxxxxxx ✅`、`inbox:✅xxxxxxxx ✅`；
+完整主键保存在 `data/UiState.json`。任务创建格式为
+`标题|描述|开始|截止|优先级`，描述中的 `|` 使用 `\|` 转义。开始默认 `today`，
+优先级默认 `low`；六行面板实时回显五字段，最后一行回车直接创建。
+
 Workflow 配置提供 Debug、Notification、Play Sound、Show Large Type 和
-字段分隔符；`ap/rl/cf/v/t/w/tm/i` 八个别名也全部可自定义。Debug 打开后，
+字段分隔符；`ap/rl/cf/v/t/w/tm/i` 八个别名也全部可自定义。
+`Short Key Sentinel 短键分隔哨兵` 默认为 `✅ `，支持改成任意非空文本；
+`Include Completed & Archived 检索完成/归档任务` 默认关闭，开启后项目、
+Inbox 和全局任务搜索会同时包含已完成与已归档任务。
+Debug 打开后，
 Alfred 调试器会显示 `[stacks-trace]` 全链路日志
 （入参 → 命令路由 → 预处理 → 二进制 argv → 退出码/返回 → 后处理），同一份
 日志写入 workflow 的 `log/trace.log`。通知和大字号由 Alfred 原生
@@ -140,7 +148,9 @@ monday ... sunday
 
 ## 构建产物与安装
 
-`just package` 生成不含源码、用户数据和运行时日志的：
+`just release-binary` 使用 `-Os`、ThinLTO、dead-strip 和非动态导入符号剥离，
+生成最小体积的 `build/release/Stacks_Tools`。`just package` 会先重新执行该
+构建，再生成不含源码、用户数据、运行时日志和 `update.json` 的：
 
 ```text
 dist/Omni-Stacks.alfredworkflow
@@ -152,6 +162,7 @@ dist/Omni-Stacks.alfredworkflow
 ```text
 发布的 workflow/
 ├── Stacks_Tools       # 单个可执行文件
+├── icon.png           # 符号链接 → icons/icon.png（不复制图片）
 ├── icons/
 │   ├── icon.png
 │   ├── project.png
@@ -170,9 +181,14 @@ dist/Omni-Stacks.alfredworkflow
 
 ```text
 data/{Project,Stack,Timers}.json
+data/UiState.json
 log/interface.log_YYYYMMDD_N.log
 log/trace-YYYYMMDD.log
 ```
+
+Alfred Workflow 元数据图标使用根目录 `icon.png` 符号链接，指向唯一的
+`icons/icon.png`。打包使用 `zip -y` 保留链接，避免发布包或插件目录重复保存
+同一张 PNG。
 
 安装当前 Alfred workflow：
 

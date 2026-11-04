@@ -38,7 +38,7 @@
 - `ci/run-template-matrix.sh` — 模板矩阵执行器
 - `ci/select-changed-templates.sh` — Git 差异到模板目录的映射器
 - `ci/cleanup-job-workspace.sh` — Actions Job 完成前的安全工作区清理
-- `.github/workflows/docs-pages.yml` — 构建全部模板 Doxygen 并发布 GitHub Pages
+- `.github/workflows/docs-pages.yml` — 构建全部模板 Doxygen + clang-doc 并发布 GitHub Pages
 - `ci/build-pages-docs.sh` — 汇总三个模板到单一 Pages 站点
 - `ci/pages-templates.tsv` — Pages 首页模板清单与说明维护点
 - `ci/site-nav.html`、`ci/site-nav.css` — 详情页公共导航与首页博客入口
@@ -89,7 +89,7 @@ git push -u origin master
 3. 打开仓库 **Actions** 标签：
    - 若是首次启用，点击 **I understand my workflows, go ahead and enable them**。
    - 左侧选择 `Template Matrix CI`，可看到模板检测、`Linux` 和 `macOS` Job。
-   - 左侧选择 `Template Doxygen Pages`，可查看或手动重跑 Pages 构建与部署。
+   - 左侧选择 `Template API Docs Pages`，可查看或手动重跑 Pages 构建与部署。
 
 4. 触发方式：
    - 向 `master`/`main` 推送，或创建/更新 Pull Request（自动触发）。
@@ -101,8 +101,8 @@ git push -u origin master
 
 ## GitHub Pages 文档
 
-Pages 使用**方案 A**：每次构建全部模板 Doxygen，生成一个完整静态 artifact，
-再由 `actions/deploy-pages` 原子发布。生成 HTML 不进入源码分支。
+Pages 使用**方案 A**：每次构建全部模板 Doxygen 与 clang-doc，生成一个完整静态
+artifact，再由 `actions/deploy-pages` 原子发布。生成 HTML 不进入源码分支。
 
 URL 结构固定为：
 
@@ -111,13 +111,27 @@ https://suchaharcan.github.io/CXX-CMake-template/
 https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/
 https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/
 https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-classic/clang-doc/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-modules/clang-doc/
+https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/clang-doc/
 ```
+
+兼容规则：
+
+- `/<template>/` 永久保留为 Doxygen 入口，已有博客/外部链接无需修改；
+- clang-doc 只新增 `/<template>/clang-doc/`，不能占用旧路径；
+- 两种文档的共享导航提供双向切换，深层页面使用相对路径返回对应入口；
+- `ci/verify-pages-site.sh` 会在上传前验证全部旧入口和新增入口；
+- `actions/deploy-pages` 只在构建和验证全部成功后运行，失败时线上继续提供
+  上一成功 artifact，不会用半成品覆盖现有文档。
 
 新增模板时：
 
 1. 在 `ci/pages-templates.tsv` 增加一行 `模板目录<TAB>说明`；
-2. 确保模板有 CMakeLists.txt 和 `docs-doxygen` target；
-3. 推送 `master`，`Template Doxygen Pages` 自动重建总站。
+2. 确保模板有 CMakeLists.txt、`docs-doxygen` 与 `docs-clangdoc` target；
+3. C++ 模块模板应设置 `CXX_DOC_CLANGDOC_BUILD_TARGETS` 和
+   `CXX_DOC_CLANGDOC_SOURCES`，先构建模块映射再运行 clang-doc；
+4. 推送 `master`，`Template API Docs Pages` 自动重建总站。
 
 ### Umami 访问统计
 
@@ -125,8 +139,8 @@ https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/
 页面的 `</head>` 前。覆盖范围包括：
 
 - Pages 根入口 `index.html`；
-- 三个模板的 Doxygen 首页、类/函数/文件等全部 HTML 子页面；
-- 后续按 `ci/pages-templates.tsv` 新增模板生成的 Doxygen 页面。
+- 三个模板的 Doxygen 与 clang-doc 首页、类/函数/文件等全部 HTML 子页面；
+- 后续按 `ci/pages-templates.tsv` 新增模板生成的两套文档页面。
 
 当前片段复用博客的 Umami Website ID，并以 `data-domains` 将采集限制在
 `suchaharcan.github.io`；`data-exclude-hash` 与参考站保持一致，不把 Doxygen
@@ -138,12 +152,17 @@ https://suchaharcan.github.io/CXX-CMake-template/single-exe-static-modules/
 
 ```bash
 bash ci/build-pages-docs.sh build/pages-site
+bash ci/verify-pages-site.sh build/pages-site
 test -f build/pages-site/.nojekyll
 test -f build/pages-site/index.html
 test -f build/pages-site/single-exe-classic/index.html
 test -f build/pages-site/single-exe-modules/index.html
 test -f build/pages-site/single-exe-static-modules/index.html
+test -f build/pages-site/single-exe-classic/clang-doc/index.html
+test -f build/pages-site/single-exe-modules/clang-doc/index.html
+test -f build/pages-site/single-exe-static-modules/clang-doc/index.html
 rg -q '返回模板集合' build/pages-site/single-exe-static-modules/index.html
+rg -q '返回模板集合' build/pages-site/single-exe-static-modules/clang-doc/index.html
 rg -q '03Share_blog' build/pages-site/index.html
 rg -q 'cloud.umami.is/script.js' build/pages-site/index.html
 rg -q 'cloud.umami.is/script.js' build/pages-site/single-exe-classic/index.html

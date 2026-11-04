@@ -4,16 +4,17 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-build_binary="$project_root/build/Stacks_Tools"
+build_binary="$project_root/build/release/Stacks_Tools"
 dist="$project_root/dist"
 stage="$dist/Omni-Stacks"
 archive="$dist/Omni-Stacks.alfredworkflow"
 
-# 打包只接受已成功构建的根级单二进制。
+# 打包只接受 release-binary 生成的最小体积单二进制。
 if [[ ! -x "$build_binary" ]]; then
-  echo "missing build/Stacks_Tools; run: just build" >&2
+  echo "missing build/release/Stacks_Tools; run: just release-binary" >&2
   exit 1
 fi
+bash "$project_root/tests/check_release_binary.sh" "$build_binary"
 
 mkdir -p "$dist"
 rm -rf "$stage"
@@ -24,10 +25,11 @@ cp "$build_binary" "$stage/Stacks_Tools"
 cp "$project_root/alfred/info.plist" "$stage/info.plist"
 cp "$project_root/alfred/prefs.plist" "$stage/prefs.plist"
 cp "$project_root/icons/"*.png "$stage/icons/"
+ln -s icons/icon.png "$stage/icon.png"
 cp "$project_root/scripts/stacks-filter.zsh" "$stage/scripts/stacks-filter.zsh"
 cp "$project_root/scripts/stacks-action.zsh" "$stage/scripts/stacks-action.zsh"
-chmod 755 "$stage/Stacks_Tools" \
-  "$stage/scripts/stacks-filter.zsh" "$stage/scripts/stacks-action.zsh"
+chmod 755 "$stage/Stacks_Tools" "$stage/scripts/stacks-filter.zsh" \
+  "$stage/scripts/stacks-action.zsh"
 
 # package 模式会额外拒绝 data/log，防止把开发机用户数据带入 Release。
 bash "$project_root/tests/check_workflow_layout.sh" "$stage" package
@@ -35,7 +37,8 @@ rm -f "$archive"
 (
   cd "$stage"
   # 使用 ditto-compatible 布局压缩，保留图标/脚本权限和资源叉。
-  /usr/bin/zip -qry "$archive" info.plist prefs.plist icons scripts Stacks_Tools
+  # -y 保留根 icon.png 指向 icons/icon.png 的符号链接，而不是复制图片。
+  /usr/bin/zip -qry -y "$archive" info.plist icon.png prefs.plist icons scripts Stacks_Tools
 )
 echo "workflow package: $archive"
 du -h "$archive"

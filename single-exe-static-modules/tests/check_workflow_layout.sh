@@ -33,6 +33,12 @@ for required_file in \
   fi
 done
 
+# 发布和安装都停止携带自动更新元数据。
+if [[ -e "$workflow_dir/update.json" || -L "$workflow_dir/update.json" ]]; then
+  echo "update.json must not be included in the workflow" >&2
+  exit 1
+fi
+
 for required_dir in icons scripts; do
   if [[ ! -d "$workflow_dir/$required_dir" ]]; then
     echo "missing workflow directory: $required_dir" >&2
@@ -73,9 +79,13 @@ if [[ -e "$workflow_dir/Stacks_Tools/Stacks_Tools" ]]; then
   echo "legacy nested binary layout is not allowed" >&2
   exit 1
 fi
-# 品牌图标只允许 icons/icon.png，避免根文件与 Alfred 图标缓存冲突。
-if [[ -e "$workflow_dir/icon.png" ]]; then
-  echo "icon.png must live at icons/icon.png" >&2
+# Alfred 根图标必须是引用，不允许再复制一份 PNG。
+if [[ ! -L "$workflow_dir/icon.png" ]]; then
+  echo "root icon.png must be a symlink" >&2
+  exit 1
+fi
+if [[ "$(readlink "$workflow_dir/icon.png")" != "icons/icon.png" ]]; then
+  echo "root icon.png must reference icons/icon.png" >&2
   exit 1
 fi
 

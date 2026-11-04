@@ -7,7 +7,7 @@
 ## 1. 模板定位
 
 工程名为 `OmniStacksStaticModules`，对外二进制保持 Alfred 运行契约
-`Stacks_Tools`。项目由一个可执行文件和五个独立 STATIC C++20 模块组成：
+`Stacks_Tools`。项目由一个可执行文件和五个独立 STATIC C++26 模块组成：
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -44,10 +44,10 @@
 | 模块 | 对外职责 | 允许依赖 |
 | --- | --- | --- |
 | `InterfaceLog` | 结构化接口日志、bqlog、日志清理 | `std`、`bq.log` |
-| `ProjectSync` | `.project` 扫描、Project/Stack 索引 | `std`、`InterfaceLog` |
+| `ProjectSync` | 工作区有效性、路径索引移除、Project/Stack 索引 | `std`、`InterfaceLog` |
 | `TaskManager` | 任务文件 CRUD、日期和周查询、计时 | `std`、`InterfaceLog` |
 | `ReminderSync` | AppleScript 参数和外部应用同步 | `std`、`InterfaceLog` |
-| `WorkflowUI` | Alfred 表现层和 action 分发 | 上述领域模块 |
+| `WorkflowUI` | Alfred 表现层、短句柄、单输入框五字段解析和 action 分发 | 上述领域模块 |
 | `Stacks_Tools` | CLI 入口 | 全部导出模块 |
 
 约束：
@@ -90,7 +90,7 @@ workflow 根目录首次自举。
 `sync_all(search_path, DbPaths)` 的同步阶段：
 
 1. 读取历史 `library_paths` 并规范化绝对路径；
-2. 校验新路径存在且是目录，加入路径集合；
+2. 校验新路径存在、是目录，并满足五个固定成员的类型约束；
 3. 递归扫描 `.project`，按绝对路径排序后解析；
 4. 生成 Project 节点和扁平的 Project/Stack 节点；
 5. 单坏项目记录到 `failed_projects`，继续扫描其他项目；
@@ -98,6 +98,20 @@ workflow 根目录首次自举。
 
 `Project.json` 保存工作区与项目文件定位；`Stack.json` 保存 `kind`、
 `projectid`、`project_path`、`library_path`，供 Alfred 三级导航和任务创建。
+
+固定结构：
+
+```text
+companies        regular file
+documents.tree   regular file
+people           regular file
+tasks/           directory
+timeboxes/       directory
+```
+
+`.project` 可不存在；任意层级存在只表示已有项目，不参与有效性布尔判断。
+`inspect_workspace`/`list_workspaces` 提供实时诊断，`remove_workspace_index`
+在跨进程锁内移除 P/S/T 索引并回滚半成功写入。它没有删除工作区文件的能力。
 
 ### 4.3 TaskManager
 
@@ -118,6 +132,9 @@ workflow 根目录首次自举。
 任务 ID 为 20 字符：8 个 steady-clock 位 + 12 个随机位。所有写操作使用
 `data/.stacks-tools.lock` 排他锁；读取 `timelogs` 前保留完整原始 JSON，以支持
 跨文件回滚且不丢失 Stacks 未知字段。
+
+任务搜索只消费标题和描述：标题完全匹配/前缀/子串/子序列均高于任何描述命中，
+描述命中是第二梯队；同分再按截止日期和标题排序。
 
 ### 4.4 ReminderSync
 
@@ -140,22 +157,39 @@ Stacks_Tools action "<token>"   → 领域操作结果
 UI 层级：
 
 1. `s`：不可选操作说明 + 一级命令 + 项目/清单入口；
-2. 项目/清单：模糊过滤，回车进入任务级；
+2. 项目/清单：回车查看任务；输入五字段后切换为六行实时创建面板；
 3. 任务：详情、编辑、日期、完成、计时、同步、归档、删除；
-4. Inbox：先选工作区，再显示/搜索/创建；
-5. 本周：跨全部工作区聚合，并支持批量同步。
+4. Inbox：选工作区并回车查看任务；输入五字段后切换为同款创建面板；
+5. 路径配置：列出全部已加入路径的有效性和项目数，二次确认后仅移除索引；
+6. 本周：跨全部工作区聚合，并支持批量同步。
 
-action token 使用 `command:id:base64url(payload)`。base64url 不包含 `:`、
-空格和 shell 元字符，标题、描述、Unicode、引号与换行不会改变 token 结构。
-说明行固定 `valid=false`，Back 固定最后一行。
+`data/UiState.json` 是 UI 运行状态，不属于 Stacks 业务数据：
+
+- `handles` 把 `task/board/inbox/workspace` 的 `✅xxxxxxxx` 映射到完整主键；
+- Alfred autocomplete 显示 `✅xxxxxxxx ✅ `，尾部哨兵与后续用户输入分隔；
+- 开始默认 `today`，优先级默认 `low`，标题为空时提交项不可选；
+- 五字段由当前 Alfred 输入实时解析，六行只做完整回显；
+- 创建 action 成功结束后退出当前会话，下一次不会沿用旧创建输入；
+- 路径索引移除后清理对应工作区句柄。
+
+导航条目使用 `valid=false + autocomplete`，说明行 `valid=false`，真正执行动作
+的行使用 `arg + valid=true`。所有动态条目不输出 `uid`，根对象使用
+`skipknowledge=true`，避免 Alfred 学习顺序把说明行置顶。
+
+action token 中的业务主键可以由短句柄恢复；用户自由文本使用
+`base64url(payload)`。base64url 不包含 `:`、空格和 shell 元字符，标题、描述、
+Unicode、引号与换行不会改变 token 结构。说明行固定 `valid=false`，Back 位于
+每个层级的末尾。
 
 ## 5. 持久化与并发
 
 - 用户 Stacks 工作区只保存项目文件、任务文件、people 和 timelogs 内容；
 - `Project.json`、`Stack.json`、`Timers.json` 属于插件运行状态；
+- `UiState.json` 属于可重建的 UI 状态，不写入 Stacks 工作区；
 - JSON 使用四空格缩进，便于与 Stacks 文本格式人工比对；
 - 原子写实现始终在目标同目录创建临时文件；
 - `ScopedFileLock` 使用 `flock(LOCK_EX | LOCK_NB)`，冲突返回 `lock_failure`；
+- 路径移除与任务写入共享锁，P → S → T 顺序写，后续失败恢复已写快照；
 - 测试、打包和开发 CLI 不得以真实工作区作为直接写入目标。
 
 ## 6. Alfred 与调试边界
@@ -179,6 +213,9 @@ action token 使用 `command:id:base64url(payload)`。base64url 不包含 `:`、
 `STACKS_DEBUG` 控制 `[stacks-trace]`，`STACKS_LOGGING` 控制所有文件日志。
 Alfred JSON 的 stdout 必须只包含一行完整对象，诊断信息进入 stderr。
 
+`cf` 同时由 shell 和 C++ 接受，避免旧安装脚本/自定义别名环境导致
+`s cf` 只出现在帮助文本却无法直接进入配置页。
+
 ## 7. 注释与文档规范
 
 本模板沿用原 `single-exe-static-modules` 的高信息密度注释格式：
@@ -195,7 +232,7 @@ Alfred JSON 的 stdout 必须只包含一行完整对象，诊断信息进入 st
 
 ```bash
 just build             # RelWithDebInfo 构建
-just test              # 20 个 GTest 边界/并发用例
+just test              # 32 个 GTest 边界/并发用例
 just mutation-test     # 4 个真实 mutant 必须全部 killed
 just install-layout-test
 just smoke
@@ -218,9 +255,10 @@ build/docs/doxygen/html/index.html
 `compile_commands.json` 中的 `@...modmap` 参数时，模块映射必须已经存在。
 该目标还固定从构建目录执行，使相对 `.modmap` 路径能够正确解析。
 
-clang-doc 显式接收项目 `.cppm/.cpp` 源文件列表，只把构建目录中的 `std.cppm`
-和 `bq.log.cppm` 当作模块依赖，不把它们当成文档输入，因此不会产生 libc++
-保留模块名告警，也不会生成无关的标准库文档。
+clang-doc 显式接收项目 `.cppm/.cpp` 源文件列表，同时先把 compile commands
+过滤为目标对应的正常 `.o` 条目，避开 CMake 模块扫描生成的 `.bmi` 临时项。
+构建目录中的 `std.cppm` 和 `bq.log.cppm` 不会成为直接文档输入；clang-doc 仍会
+根据 import 关系为 `std` 等依赖生成映射页，这是工具的正常符号解析行为。
 
 LLDB 的实际操作、常用命令和三个可复现实验见项目根目录
 [debug.md](../debug.md)。

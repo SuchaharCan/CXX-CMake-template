@@ -278,15 +278,17 @@
 	<string># Omni-Stacks
 
 输入 `s` 显示“所有可用操作”，并继续列出项目/清单。
-输入 `s 标题|描述|开始|截止|优先级` 后，回车即可创建到所选层级。
+选择项目、Stack 或 Inbox 工作区后，在输入框一次性输入：
+标题|描述|开始|截止|优先级。下方六行实时回显，最后一行回车直接创建；
+开始默认今天，优先级默认 low，描述中的 | 使用 \| 转义。
+开始、截止、优先级的默认值和可枚举值使用纯英文 Default/Allowed 说明。
 
 - `s ap`（add-path）：添加新路径
 - `s rl`（reload）：重载全部已保存路径
-- `s cf`（config）：查看路径配置
-- `s v`（view）：模糊匹配项目/清单；进入后模糊匹配任务，详情和列表均可返回上一级
-- `s t 关键词`（tasks）：全局搜索全部工作区
-- `s i`（inbox）：选择工作区后直接列出 Inbox 任务，输入即模糊匹配；
-  无任务或无匹配时直接进入新建，任务详情可编辑并返回
+- `s cf`（config）：列出全部已加入路径、有效性和项目数；回车进入移除索引确认页
+- `s v`（view）：进入项目/清单后先查看任务；输入五字段后切换为六行创建面板
+- `s t 关键词`（tasks）：全局按标题优先、描述其次模糊搜索
+- `s i`（inbox）：选择工作区后回车查看 Inbox 任务；输入五字段后切换为创建面板
 - `s w` / `s tm`：本周截止 / 计时
 
 优先级支持 low/低、medium/中、high/高、critical/紧急。
@@ -294,6 +296,9 @@
 
 Workflow 配置提供 Debug、Notification、Play Sound、Show Large Type
 、字段分隔符，以及 ap/rl/cf/v/t/w/tm/i 八个可自定义别名。
+短键分隔哨兵默认 `✅ `，可自定义；检索完成/归档任务默认关闭，可由
+Include Completed &amp; Archived checkbox 开启。
+路径移除只清理 Project/Stack/Timers 三个插件索引，不会删除工作区目录或任务文件。
 Logging 可整体启用/停用 bqlog 与 trace；启用时自动保留最近 3 个月。
 Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
 发布包不包含 data/ 和 log/，首次启动自动创建。
@@ -426,6 +431,46 @@ Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
 			<string>textfield</string>
 			<key>variable</key>
 			<string>STACKS_DELIMITER</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>✅ </string>
+				<key>placeholder</key>
+				<string>✅ </string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>短键尾部输入分隔标记，默认 ✅。会显示在 task/board/inbox 短句柄之后；程序自动补一个空格。Sentinel after short keys; default ✅.</string>
+			<key>label</key>
+			<string>Short Key Sentinel 短键分隔哨兵</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_HANDLE_SENTINEL</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<false/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string></string>
+			</dict>
+			<key>description</key>
+			<string>关闭时隐藏已完成和已归档任务；开启后在项目、收件箱和全局搜索中同时检索这两类任务。默认关闭。Include completed and archived tasks in task lists.</string>
+			<key>label</key>
+			<string>Include Completed &amp; Archived 检索完成/归档任务</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>STACKS_INCLUDE_DONE_ARCHIVED</string>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -618,7 +663,7 @@ Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
 	<key>variablesdontexport</key>
 	<array/>
 	<key>version</key>
-	<string>2.0.0</string>
+	<string>2.1.0</string>
 	<key>webaddress</key>
 	<string>https://suchaharcan.github.io/</string>
 </dict>

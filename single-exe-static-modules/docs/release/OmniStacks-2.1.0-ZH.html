@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Omni-Stacks 2.1.0 中文功能图</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1600px; height: 900px; overflow: hidden; }
+    body {
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(56, 189, 248, .28), transparent 34%),
+        radial-gradient(circle at 92% 14%, rgba(168, 85, 247, .22), transparent 28%),
+        linear-gradient(145deg, #07111f 0%, #0e1b31 48%, #111827 100%);
+    }
+    .shell { padding: 52px 64px 42px; height: 100%; display: flex; flex-direction: column; }
+    .top { display: flex; align-items: center; gap: 24px; margin-bottom: 34px; }
+    .logo {
+      width: 86px; height: 86px; border-radius: 24px; object-fit: cover;
+      box-shadow: 0 18px 50px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.16);
+    }
+    .title { font-size: 54px; line-height: 1; font-weight: 760; letter-spacing: -.8px; }
+    .subtitle { margin-top: 10px; color: #9fb3cc; font-size: 22px; }
+    .version {
+      margin-left: auto; padding: 10px 18px; border: 1px solid rgba(125,211,252,.5);
+      background: rgba(14,165,233,.16); color: #bae6fd; border-radius: 999px; font-size: 20px;
+    }
+    .grid { display: grid; grid-template-columns: 1.28fr .9fr; gap: 28px; flex: 1; min-height: 0; }
+    .panel {
+      border-radius: 30px; padding: 28px;
+      background: rgba(244,247,252,.96); color: #1f2937;
+      box-shadow: 0 28px 80px rgba(0,0,0,.38), inset 0 0 0 1px rgba(255,255,255,.8);
+    }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; }
+    .panel-title strong { font-size: 26px; color: #0f172a; }
+    .hint { font-size: 17px; color: #64748b; }
+    .search {
+      margin: 22px 0 18px; height: 62px; border-radius: 14px; display: flex; align-items: center;
+      padding: 0 18px; font: 25px/1 "SF Mono", Menlo, monospace; color: #2563eb;
+      background: #fff; box-shadow: inset 0 0 0 1px #dbe5f2;
+    }
+    .cursor { width: 3px; height: 30px; background: #3b82f6; margin-left: 3px; }
+    .row {
+      display: grid; grid-template-columns: 54px 1fr auto; gap: 16px; align-items: center;
+      min-height: 77px; padding: 10px 16px; border-bottom: 1px solid #e7edf5;
+    }
+    .row:last-child { border-bottom: 0; }
+    .icon {
+      width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+      font-size: 25px; background: #e9f8ef; border: 1px solid #d3f2df;
+    }
+    .row strong { display: block; font-size: 23px; color: #1d4ed8; margin-bottom: 4px; }
+    .row small { font-size: 15px; color: #7a8799; }
+    .return { color: #8a4b46; font-size: 25px; }
+    .create { margin-top: 4px; border-radius: 14px; background: #edf5ff; padding-left: 20px; }
+    .right { display: grid; grid-template-rows: auto 1fr; gap: 20px; }
+    .feature, .config {
+      border-radius: 28px; padding: 26px 28px;
+      background: rgba(10,20,38,.72); border: 1px solid rgba(148,163,184,.22);
+      box-shadow: 0 20px 65px rgba(0,0,0,.3);
+    }
+    .feature h2, .config h2 { margin: 0 0 18px; font-size: 27px; color: #dbeafe; }
+    .feature ul { list-style: none; margin: 0; padding: 0; }
+    .feature li { margin: 13px 0; font-size: 19px; color: #d8e4f4; }
+    .feature li::before {
+      content: "✓"; margin-right: 12px; color: #34d399; font-weight: 800;
+    }
+    .config-line {
+      display: flex; justify-content: space-between; gap: 16px; padding: 12px 0;
+      border-bottom: 1px solid rgba(148,163,184,.18); font-size: 17px;
+    }
+    .config-line:last-child { border-bottom: 0; }
+    .key { color: #93c5fd; font-family: "SF Mono", Menlo, monospace; }
+    .value { color: #e2e8f0; text-align: right; }
+    .ok { color: #6ee7b7; }
+    .footer { margin-top: 24px; display: flex; justify-content: space-between; color: #7890ad; font-size: 17px; }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <img class="logo" src="../../icons/icon.png" alt="Omni-Stacks">
+      <div>
+        <div class="title">Omni-Stacks 2.1.0</div>
+        <div class="subtitle">单输入框任务录入 · 可配置短键 · 完成/归档筛选 · Alfred 官方更新</div>
+      </div>
+      <div class="version">Stacks 2 · Alfred Workflow</div>
+    </header>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-title">
+          <strong>六行实时回显 / 单输入框创建</strong>
+          <span class="hint">一次输入 · 回车创建</span>
+        </div>
+        <div class="search">
+          <span>s inbox:✅067e1b69 ✅ lala|demo | |tomo|low</span><span class="cursor"></span>
+        </div>
+        <div class="row">
+          <div class="icon">✓</div><div><strong>标题：lala</strong><small>必填 · 第 1 段</small></div><span class="return">↩</span>
+        </div>
+        <div class="row">
+          <div class="icon">☰</div><div><strong>描述：demo</strong><small>可空 · 支持 Markdown/HTML</small></div><span class="return">⌘2</span>
+        </div>
+        <div class="row">
+          <div class="icon">▦</div><div><strong>开始：2026-11-04</strong><small>Default: today · Allowed: today / tomorrow / +Nd / YYYY-MM-DD</small></div><span class="return">⌘3</span>
+        </div>
+        <div class="row">
+          <div class="icon">▦</div><div><strong>截止：tomo</strong><small>Default: unset · 支持相对日期与 ISO 日期</small></div><span class="return">⌘4</span>
+        </div>
+        <div class="row">
+          <div class="icon">✓</div><div><strong>优先级：low</strong><small>Default: low · low / medium / high / critical</small></div><span class="return">⌘5</span>
+        </div>
+        <div class="row create">
+          <div class="icon" style="background:#dcecff;border-color:#bfdbfe">↩</div>
+          <div><strong>回车创建任务 / Create task</strong><small>任务写入本地 Stacks，随后退出当前创建会话</small></div><span class="return">⌘6</span>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="feature">
+          <h2>2.1.0 关键能力</h2>
+          <ul>
+            <li>短键后增加可配置输入分隔哨兵，默认 <b>✅</b></li>
+            <li>标题 / 描述 / 开始 / 截止 / 优先级一次录入</li>
+            <li>完成与归档任务默认隐藏，可按需开启</li>
+            <li>路径页直接进入索引移除确认，不删除工作区文件</li>
+            <li>发布包不携带 update.json，不注册自动更新元数据</li>
+          </ul>
+        </div>
+        <div class="config">
+          <h2>Workflow Configuration</h2>
+          <div class="config-line"><span class="key">STACKS_HANDLE_SENTINEL</span><span class="value">✅</span></div>
+          <div class="config-line"><span class="key">STACKS_INCLUDE_DONE_ARCHIVED</span><span class="value ok">关闭（默认）</span></div>
+          <div class="config-line"><span class="key">Stacks_Tools</span><span class="value ok">最小体积 / 符号已剥离</span></div>
+          <div class="config-line"><span class="key">root icon.png</span><span class="value">→ icons/icon.png</span></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>核心：C++26 单二进制 · 无后台常驻进程 · 结构化接口日志</span>
+      <span>github.com/SuchaharCan/AlfredWorkflows_Collection · release / Stacks2</span>
+    </footer>
+  </main>
+</body>
+</html>

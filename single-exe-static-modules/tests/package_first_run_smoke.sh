@@ -10,6 +10,9 @@ SANDBOX="$(mktemp -d "$ROOT/tests/.runtime/package-first-run.XXXXXX")"
 unzip -q "$ARCHIVE" -d "$SANDBOX"
 test ! -e "$SANDBOX/data"
 test ! -e "$SANDBOX/log"
+test -L "$SANDBOX/icon.png"
+test "$(readlink "$SANDBOX/icon.png")" = "icons/icon.png"
+test ! -e "$SANDBOX/update.json"
 
 "$SANDBOX/scripts/stacks-filter.zsh" "" |
   jq -e '.items | length > 0' >/dev/null
