@@ -122,10 +122,12 @@ just smoke
 短输入键显示为 `task:✅xxxxxxxx ✅`、`board:✅xxxxxxxx ✅`、`inbox:✅xxxxxxxx ✅`；
 完整主键保存在 `data/UiState.json`。任务创建格式为
 `标题|描述|开始|截止|优先级`，描述中的 `|` 使用 `\|` 转义。开始默认 `today`，
-优先级默认 `low`；六行面板实时回显五字段，最后一行回车直接创建。
+优先级默认 `low`；半角 `|`、全角 `｜` 及对应中英文标点可随输入法混用，
+无需为分隔符切换状态。六行面板实时回显五字段，最后一行回车直接创建。
 
 Workflow 配置提供 Debug、Notification、Play Sound、Show Large Type 和
 字段分隔符；`ap/rl/cf/v/t/w/tm/i` 八个别名也全部可自定义。
+字段分隔符按 Unicode 全角/半角等价解析，例如配置 `|` 时 `|` 与 `｜` 均有效。
 `Short Key Sentinel 短键分隔哨兵` 默认为 `✅ `，支持改成任意非空文本；
 `Include Completed & Archived 检索完成/归档任务` 默认关闭，开启后项目、
 Inbox 和全局任务搜索会同时包含已完成与已归档任务。

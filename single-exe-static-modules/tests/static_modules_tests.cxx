@@ -969,6 +969,81 @@ TEST(Boundary, WorkflowUiOneShotFiveFieldFormUsesDefaultsAndShortHandles) {
   EXPECT_FALSE(task_page["items"].empty());
 }
 
+/// 验证默认分隔符可在中文/英文输入状态下混用 `|` 与 `｜`，并可用任一宽度转义。
+TEST(Boundary, WorkflowUiFieldDelimiterTreatsHalfAndFullWidthAsEquivalent) {
+  ScopedEnvironmentVariable delimiter("STACKS_DELIMITER", "|");
+  ScopedEnvironmentVariable sentinel("STACKS_HANDLE_SENTINEL", "✅");
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+  const json boards = json::parse(WorkflowUI::filter(context, "board"));
+  std::string stack_query;
+  for (const auto& entry : boards["items"]) {
+    if (entry.value("title", "").find("Stack One") != std::string::npos) {
+      stack_query = entry["autocomplete"].get<std::string>();
+      break;
+    }
+  }
+  ASSERT_FALSE(stack_query.empty());
+
+  const json page = json::parse(WorkflowUI::filter(
+      context, std::format("{}混排 title｜中英\\｜描述|today｜tomorrow|high", stack_query)));
+  ASSERT_EQ(page["items"].size(), 6U);
+  EXPECT_EQ(page["items"][0]["title"], "标题：混排 title");
+  EXPECT_EQ(page["items"][1]["title"], "描述：中英｜描述");
+  EXPECT_EQ(page["items"][2]["title"], "开始：today");
+  EXPECT_EQ(page["items"][3]["title"], "截止：tomorrow");
+  EXPECT_EQ(page["items"][4]["title"], "优先级：high");
+  ASSERT_TRUE(page["items"][5]["valid"].get<bool>());
+
+  const auto created = WorkflowUI::action(context, page["items"][5]["arg"].get<std::string>());
+  ASSERT_TRUE(created.has_value()) << created.error();
+  const auto tasks = TaskManager::list_tasks(
+      fixture.databases, TaskManager::TaskListOptions{.target = TaskManager::TargetId("s1"),
+                                                      .query = "",
+                                                      .include_done = true,
+                                                      .include_archived = false});
+  ASSERT_TRUE(tasks.has_value());
+  ASSERT_EQ(tasks->size(), 1U);
+  EXPECT_EQ(tasks->front().title, "混排 title");
+  EXPECT_EQ(tasks->front().description, "中英｜描述");
+  EXPECT_EQ(tasks->front().priority, "high");
+}
+
+/// 验证自定义分隔符本身是中文标点时，也接受对应英文半角标点与转义。
+TEST(Boundary, WorkflowUiCustomFieldDelimiterNormalizesConfiguredWidth) {
+  ScopedEnvironmentVariable delimiter("STACKS_DELIMITER", "，");
+  ScopedEnvironmentVariable sentinel("STACKS_HANDLE_SENTINEL", "✅");
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+  const json boards = json::parse(WorkflowUI::filter(context, "board"));
+  std::string stack_query;
+  for (const auto& entry : boards["items"]) {
+    if (entry.value("title", "").find("Stack One") != std::string::npos) {
+      stack_query = entry["autocomplete"].get<std::string>();
+      break;
+    }
+  }
+  ASSERT_FALSE(stack_query.empty());
+
+  const json page = json::parse(WorkflowUI::filter(
+      context, std::format("{}自定义标题，中英\\,描述, today，tomorrow, medium", stack_query)));
+  ASSERT_EQ(page["items"].size(), 6U);
+  EXPECT_EQ(page["items"][0]["title"], "标题：自定义标题");
+  EXPECT_EQ(page["items"][1]["title"], "描述：中英,描述");
+  EXPECT_EQ(page["items"][2]["title"], "开始：today");
+  EXPECT_EQ(page["items"][3]["title"], "截止：tomorrow");
+  EXPECT_EQ(page["items"][4]["title"], "优先级：medium");
+  EXPECT_TRUE(page["items"][5]["valid"].get<bool>());
+}
+
 /// 验证 Inbox 路径可回车进入任务列表，输入五字段后切换为六行创建面板。
 TEST(Boundary, WorkflowUiInboxOpensTasksAndUsesOneShotCreateForm) {
   Fixture fixture;

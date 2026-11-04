@@ -33,14 +33,9 @@ query="${raw_query##[[:space:]]#}"
 query="${query%%[[:space:]]#}"
 trace "2.trimmed_input=<$query>"
 
-# 2) 分隔符预处理：把用户自定义分隔符替换成核心约定的 |
+# 2) 分隔符原样交给 C++：核心统一处理自定义字符、全角/半角与转义。
 delimiter="${STACKS_DELIMITER:-${Stacks__delimiter:-|}}"
-if [[ -n "$delimiter" && "$delimiter" != "|" && "$query" == *"$delimiter"* ]]; then
-  query="${query/$delimiter/|}"
-  trace "3.delimiter_preprocess=<$query>"
-else
-  trace "3.delimiter_preprocess=(no-op)"
-fi
+trace "3.delimiter_passthrough=<$delimiter>"
 
 # 3) 命令判定（Alfred 侧路由，简称 -> 核心命令）
 first_word="${query%%[[:space:]]*}"

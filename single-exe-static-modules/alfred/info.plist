@@ -279,8 +279,9 @@
 
 输入 `s` 显示“所有可用操作”，并继续列出项目/清单。
 选择项目、Stack 或 Inbox 工作区后，在输入框一次性输入：
-标题|描述|开始|截止|优先级。下方六行实时回显，最后一行回车直接创建；
-开始默认今天，优先级默认 low，描述中的 | 使用 \| 转义。
+标题|描述|开始|截止|优先级。半角/全角分隔符可混用，例如 | 与 ｜，
+无需切换中英文输入法。下方六行实时回显，最后一行回车直接创建；
+开始默认今天，优先级默认 low，字段内容中的分隔符使用反斜杠转义。
 开始、截止、优先级的默认值和可枚举值使用纯英文 Default/Allowed 说明。
 
 - `s ap`（add-path）：添加新路径
@@ -424,7 +425,7 @@ Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
 				<true/>
 			</dict>
 			<key>description</key>
-			<string>任务字段分隔符，默认 |。Task field delimiter; default is |.</string>
+			<string>任务字段分隔符，默认 |。半角/全角等价接受（如 | 与 ｜），无需切换中英文输入法。Task field delimiter; default is |. Half-width and full-width equivalents are accepted.</string>
 			<key>label</key>
 			<string>Field Delimiter 字段分隔符</string>
 			<key>type</key>

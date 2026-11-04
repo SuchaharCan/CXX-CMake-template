@@ -197,7 +197,7 @@ Unicode、引号与换行不会改变 token 结构。说明行固定 `valid=fals
 `stacks-filter.zsh`：
 
 1. 读取并 trim Alfred 查询；
-2. 把用户自定义分隔符替换为 `|`；
+2. 原样传递分隔符配置和用户输入，由 C++ 按 Unicode 全角/半角等价规则解析；
 3. 把可配置简称路由到 canonical command；
 4. 调用 `Stacks_Tools ui`；
 5. 过滤 bqlog 行，校验 JSON，并把 trace 写入 STDERR 和日志。
@@ -232,7 +232,7 @@ Alfred JSON 的 stdout 必须只包含一行完整对象，诊断信息进入 st
 
 ```bash
 just build             # RelWithDebInfo 构建
-just test              # 32 个 GTest 边界/并发用例
+just test              # 34 个 GTest 边界/并发用例
 just mutation-test     # 4 个真实 mutant 必须全部 killed
 just install-layout-test
 just smoke

@@ -78,6 +78,103 @@ std::string trim(std::string value) {
   return value;
 }
 
+std::string alias_from_env(std::string_view variable, std::string_view fallback);
+
+/// UTF-8 码点及其原始字节宽度。
+struct Utf8CodePoint {
+  char32_t value;
+  std::size_t bytes;
+};
+
+/// 解码一个 UTF-8 码点；非法或不完整序列按单字节处理，保证自由文本不被丢弃。
+Utf8CodePoint decode_utf8(std::string_view text, std::size_t offset) {
+  const auto first = static_cast<unsigned char>(text[offset]);
+  const auto continuation = [](unsigned char byte) { return (byte & 0xC0U) == 0x80U; };
+  if ((first & 0x80U) == 0U) {
+    return {.value = static_cast<char32_t>(first), .bytes = 1};
+  }
+  if ((first & 0xE0U) == 0xC0U && offset + 1 < text.size()) {
+    const auto second = static_cast<unsigned char>(text[offset + 1]);
+    if (continuation(second)) {
+      const auto value =
+          (static_cast<char32_t>(first & 0x1FU) << 6U) | static_cast<char32_t>(second & 0x3FU);
+      return {.value = value, .bytes = 2};
+    }
+  }
+  if ((first & 0xF0U) == 0xE0U && offset + 2 < text.size()) {
+    const auto second = static_cast<unsigned char>(text[offset + 1]);
+    const auto third = static_cast<unsigned char>(text[offset + 2]);
+    if (continuation(second) && continuation(third)) {
+      const auto value = (static_cast<char32_t>(first & 0x0FU) << 12U) |
+                         (static_cast<char32_t>(second & 0x3FU) << 6U) |
+                         static_cast<char32_t>(third & 0x3FU);
+      return {.value = value, .bytes = 3};
+    }
+  }
+  if ((first & 0xF8U) == 0xF0U && offset + 3 < text.size()) {
+    const auto second = static_cast<unsigned char>(text[offset + 1]);
+    const auto third = static_cast<unsigned char>(text[offset + 2]);
+    const auto fourth = static_cast<unsigned char>(text[offset + 3]);
+    if (continuation(second) && continuation(third) && continuation(fourth)) {
+      const auto value = (static_cast<char32_t>(first & 0x07U) << 18U) |
+                         (static_cast<char32_t>(second & 0x3FU) << 12U) |
+                         (static_cast<char32_t>(third & 0x3FU) << 6U) |
+                         static_cast<char32_t>(fourth & 0x3FU);
+      return {.value = value, .bytes = 4};
+    }
+  }
+  return {.value = static_cast<char32_t>(first), .bytes = 1};
+}
+
+/// 将常见全角标点和中文键盘标点归一化到对应半角字符。
+char32_t normalize_delimiter_codepoint(char32_t value) {
+  if (value >= 0xFF01 && value <= 0xFF5E) {
+    return value - 0xFEE0;
+  }
+  if (value == 0x3000) {
+    return 0x20;
+  }
+  if (value == 0x3001) {
+    return 0x2C;
+  }
+  if (value == 0x3002) {
+    return 0x2E;
+  }
+  return value;
+}
+
+/// 读取现有 Alfred 字段分隔符配置；仍兼容旧变量名与默认 `|`。
+std::vector<char32_t> field_delimiter_codepoints() {
+  std::string configured = alias_from_env("STACKS_DELIMITER", "");
+  if (configured.empty()) {
+    configured = alias_from_env("Stacks__delimiter", "|");
+  }
+  std::vector<char32_t> result;
+  for (std::size_t offset = 0; offset < configured.size();) {
+    const Utf8CodePoint decoded = decode_utf8(configured, offset);
+    result.push_back(decoded.value);
+    offset += decoded.bytes;
+  }
+  return result.empty() ? std::vector<char32_t>{0x7C} : result;
+}
+
+/// 返回当前位置匹配到的分隔符字节数；零表示不匹配。
+std::size_t field_delimiter_length_at(std::string_view text, std::size_t offset,
+                                      const std::vector<char32_t>& delimiter) {
+  std::size_t cursor = offset;
+  for (const char32_t expected : delimiter) {
+    if (cursor >= text.size()) {
+      return 0;
+    }
+    const Utf8CodePoint actual = decode_utf8(text, cursor);
+    if (normalize_delimiter_codepoint(actual.value) != normalize_delimiter_codepoint(expected)) {
+      return 0;
+    }
+    cursor += actual.bytes;
+  }
+  return cursor - offset;
+}
+
 /// 按首个分隔符拆分，保留其余部分作为 payload。
 std::pair<std::string, std::string> split_first(std::string_view value, char separator) {
   const auto position = value.find(separator);
@@ -86,8 +183,6 @@ std::pair<std::string, std::string> split_first(std::string_view value, char sep
   }
   return {std::string(value.substr(0, position)), std::string(value.substr(position + 1))};
 }
-
-std::string alias_from_env(std::string_view variable, std::string_view fallback);
 
 /// 当前短键分隔哨兵；默认 `✅`，Alfred 变量可替换为任意非空文本。
 std::string handle_sentinel_from_env() {
@@ -448,21 +543,32 @@ struct ParsedTaskInput {
 };
 
 /**
- * @brief 拆分 `标题|描述|开始|截止|优先级`，支持字段内容中的 `\|` 转义。
- * @note 最多产生五个字段；日期与优先级的合法性仍由 TaskManager 统一校验。
+ * @brief 拆分 `标题|描述|开始|截止|优先级`，支持字段内容中的反斜杠转义。
+ * @note 配置分隔符及其全角/半角等价形式均可混用，例如 `|` 与 `｜`、`,` 与 `，`。
+ *       最多产生五个字段；日期与优先级的合法性仍由 TaskManager 统一校验。
  */
 ParsedTaskInput parse_task_fields(std::string_view text) {
   std::array<std::string, 5> fields;
   std::size_t field = 0;
-  for (std::size_t index = 0; index < text.size(); ++index) {
-    const char character = text[index];
-    if (character == '\\' && index + 1 < text.size() && text[index + 1] == '|') {
-      fields[field].push_back('|');
-      ++index;
-    } else if (character == '|' && field + 1 < fields.size()) {
+  const std::vector<char32_t> delimiter = field_delimiter_codepoints();
+  for (std::size_t index = 0; index < text.size();) {
+    const Utf8CodePoint character = decode_utf8(text, index);
+    if (character.value == 0x5C && index + character.bytes < text.size()) {
+      const std::size_t escaped_offset = index + character.bytes;
+      const std::size_t escaped_length = field_delimiter_length_at(text, escaped_offset, delimiter);
+      if (escaped_length > 0) {
+        fields[field].append(text.substr(escaped_offset, escaped_length));
+        index = escaped_offset + escaped_length;
+        continue;
+      }
+    }
+    const std::size_t delimiter_length = field_delimiter_length_at(text, index, delimiter);
+    if (delimiter_length > 0 && field + 1 < fields.size()) {
       ++field;
+      index += delimiter_length;
     } else {
-      fields[field].push_back(character);
+      fields[field].append(text.substr(index, character.bytes));
+      index += character.bytes;
     }
   }
   for (auto& value : fields) {
@@ -657,13 +763,13 @@ json creation_form_items(std::string_view target_kind, std::string_view target_t
   items.push_back(item(std::format("优先级：{}", priority_value),
                        "Default: low · Allowed: low, medium, high, critical", action, "",
                        can_create, icon_task()));
-  items.push_back(
-      item("回车创建任务 / Create task",
-           bilingual(std::format("目标：{} · 格式：标题|描述|开始|截止|优先级 · {}", target_label,
-                                 can_create ? "按回车写入本地 Stacks" : "标题为必填项"),
-                     can_create ? "Press Enter to create this task locally"
-                                : "Type a title in the Alfred input field first"),
-           action, "", can_create, icon_task()));
+  items.push_back(item(
+      "回车创建任务 / Create task",
+      bilingual(std::format("目标：{} · 格式：标题|描述|开始|截止|优先级（|/｜均可） · {}",
+                            target_label, can_create ? "按回车写入本地 Stacks" : "标题为必填项"),
+                can_create ? "Press Enter to create this task locally"
+                           : "Type a title in the Alfred input field first"),
+      action, "", can_create, icon_task()));
   return items;
 }
 
@@ -1693,7 +1799,7 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
 
       items.push_back(
           item("新建任务输入格式 / Create task",
-               bilingual("在输入框输入：标题|描述|开始|截止|优先级；输入后切换为六行创建面板",
+               bilingual("在输入框输入：标题|描述|开始|截止|优先级；|/｜可混用，无需切换输入法",
                          "Type title|description|start|due|priority in the Alfred query field"),
                "", "", false, icon_note()));
       items.push_back(item("← 返回上一级 / Back",
