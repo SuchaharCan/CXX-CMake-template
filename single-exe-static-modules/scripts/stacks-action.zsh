@@ -35,6 +35,21 @@ play_feedback_sound() {
   ( /usr/bin/afplay "$sound_file" >/dev/null 2>&1 & ) || true
 }
 
+clear_alfred_input() {
+  # 直接清空 Alfred 搜索框；Alfred 的 `search ""` 会恢复上次查询，不能用于清空。
+  if /usr/bin/osascript -e 'tell application "System Events" to tell (first application process whose bundle identifier is "com.runningwithcrayons.Alfred") to set value of text field "Alfred Search Field" of window 1 to ""' >/dev/null 2>&1; then
+    local cleared=""
+    cleared="$(
+      /usr/bin/osascript -e 'tell application "System Events" to tell (first application process whose bundle identifier is "com.runningwithcrayons.Alfred") to value of text field "Alfred Search Field" of window 1' 2>/dev/null
+    )" || return 1
+    if [[ -z "$cleared" ]]; then
+      return 0
+    fi
+  fi
+  # 无辅助功能权限时的兜底：至少不再残留上次查询文本。
+  /usr/bin/osascript -e 'tell application "Alfred 5" to search " "' >/dev/null 2>&1 || true
+}
+
 trace "0.watermark=Omni-Stacks developer=https://suchaharcan.github.io/"
 trace "1.action_token=<$token>"
 
@@ -102,5 +117,7 @@ else
   trace "7.final=success"
   play_feedback_sound /System/Library/Sounds/Glass.aiff
   print -r -- "$output"
+  # 输出结果后清空输入框；下次唤起 Alfred 不再残留 `s rename:...` 查询。
+  clear_alfred_input
 fi
 exit 0

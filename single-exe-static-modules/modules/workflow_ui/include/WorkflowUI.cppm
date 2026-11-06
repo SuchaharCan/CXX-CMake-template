@@ -21,9 +21,13 @@ module;
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -295,6 +299,8 @@ struct CommandAliases {
   std::string week = alias_from_env("STACKS_ALIAS_WEEK", "w");           ///< 本周截止。
   std::string timers = alias_from_env("STACKS_ALIAS_TIMERS", "tm");      ///< 计时列表。
   std::string inbox = alias_from_env("STACKS_ALIAS_INBOX", "i");         ///< 工作区 Inbox。
+  std::string default_inbox = alias_from_env("STACKS_ALIAS_DEFAULT_INBOX", "di");  ///< 默认收件箱。
+  std::string pin = alias_from_env("STACKS_ALIAS_PIN", "pin");  ///< 固定项目/看板。
 };
 
 /// 项目使用文件夹/项目语义图标。
@@ -349,6 +355,308 @@ std::string priority_label(std::string_view value) {
     return "紧急";
   }
   return value.empty() ? "无" : std::string(value);
+}
+
+/// 判断固定路径或 /Applications 下是否存在指定应用。
+bool application_installed(const std::vector<fs::path>& candidates) {
+  for (const auto& path : candidates) {
+    std::error_code error;
+    if (fs::is_directory(path, error)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 苹果日历是否安装（macOS 系统应用）。
+bool calendar_app_installed() {
+  if (flag_from_env("STACKS_TEST_HIDE_CALENDAR")) {
+    return false;
+  }
+  return application_installed({"/System/Applications/Calendar.app", "/Applications/Calendar.app"});
+}
+
+/// 苹果提醒是否安装（macOS 系统应用）。
+bool reminders_app_installed() {
+  if (flag_from_env("STACKS_TEST_HIDE_REMINDERS")) {
+    return false;
+  }
+  return application_installed(
+      {"/System/Applications/Reminders.app", "/Applications/Reminders.app"});
+}
+
+/// OmniFocus 是否安装；同时扫描 /Applications 与用户目录。
+bool omnifocus_app_installed() {
+  if (flag_from_env("STACKS_TEST_HIDE_OMNIFOCUS")) {
+    return false;
+  }
+  for (const fs::path root : {fs::path("/Applications"), fs::path("/System/Applications")}) {
+    std::error_code error;
+    fs::directory_iterator iterator(root, error);
+    if (error) {
+      continue;
+    }
+    for (const auto& entry : iterator) {
+      if (entry.is_directory() && entry.path().filename().string().starts_with("OmniFocus")) {
+        return true;
+      }
+    }
+  }
+  if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0') {
+    std::error_code error;
+    fs::directory_iterator iterator(fs::path(home) / "Applications", error);
+    if (!error) {
+      for (const auto& entry : iterator) {
+        if (entry.is_directory() && entry.path().filename().string().starts_with("OmniFocus")) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/// Alfred 变量控制的新建日程时长（分钟）；默认 30，范围 1–720。
+int calendar_duration_minutes() {
+  const std::string value = alias_from_env("STACKS_CALENDAR_DURATION", "30");
+  int minutes = 30;
+  try {
+    const int parsed = std::stoi(trim(value));
+    minutes = std::clamp(parsed, 1, 720);
+  } catch (const std::exception&) {
+  }
+  return minutes;
+}
+
+/// AppleScript 双引号字符串安全转义，避免标题/备注破坏脚本。
+std::string escape_apple_string(std::string_view value) {
+  std::string result;
+  result.reserve(value.size() + 8);
+  for (const char character : value) {
+    switch (character) {
+      case '\\':
+        result += "\\\\";
+        break;
+      case '"':
+        result += "\\\"";
+        break;
+      case '\n':
+        result += "\\n";
+        break;
+      case '\r':
+        result += "\\r";
+        break;
+      case '\t':
+        result += "\\t";
+        break;
+      default:
+        result += character;
+        break;
+    }
+  }
+  return result;
+}
+
+/// 执行 AppleScript 脚本文件并返回 stdout；失败返回 nullopt。
+std::optional<std::string> run_osascript(std::string_view script) {
+  std::error_code error;
+  const fs::path script_path =
+      fs::temp_directory_path(error) /
+      std::format(".stacks-calendar-{}-{}.applescript", ::getpid(),
+                  std::chrono::steady_clock::now().time_since_epoch().count());
+  {
+    std::ofstream output(script_path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+      return std::nullopt;
+    }
+    output << script;
+    output.flush();
+    if (!output) {
+      fs::remove(script_path, error);
+      return std::nullopt;
+    }
+  }
+  FILE* pipe = ::popen(std::format("/usr/bin/osascript {}", script_path.string()).c_str(), "r");
+  if (pipe == nullptr) {
+    fs::remove(script_path, error);
+    return std::nullopt;
+  }
+  std::string result;
+  char buffer[512];
+  while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    result += buffer;
+  }
+  const int status = ::pclose(pipe);
+  fs::remove(script_path, error);
+  if (status != 0) {
+    return std::nullopt;
+  }
+  return trim(std::move(result));
+}
+
+/// 测试钩子：`STACKS_CALENDAR_TEST_WINDOW=free|occupied` 可跳过真实 AppleScript 探测。
+std::optional<bool> calendar_window_override() {
+  const std::string value = trim(alias_from_env("STACKS_CALENDAR_TEST_WINDOW", ""));
+  if (value == "free") {
+    return true;
+  }
+  if (value == "occupied") {
+    return false;
+  }
+  return std::nullopt;
+}
+
+/// 读取 Timers.json；缺失或损坏时返回空对象，不修改用户计时数据。
+json load_timer_db(const Context& context) {
+  std::ifstream input(context.databases.timer_db, std::ios::binary);
+  json value;
+  try {
+    if (input >> value && value.is_object()) {
+      return value;
+    }
+  } catch (const std::exception&) {
+  }
+  return json::object();
+}
+
+/// 原子写回 Timers.json；失败保留旧文件。
+bool save_timer_db(const Context& context, const json& value) {
+  const fs::path target = context.databases.timer_db;
+  std::error_code error;
+  fs::create_directories(target.parent_path(), error);
+  if (error) {
+    return false;
+  }
+  const fs::path temporary =
+      target.parent_path() /
+      std::format(".{}.tmp.{}.{}", target.filename().string(), ::getpid(),
+                  std::chrono::steady_clock::now().time_since_epoch().count());
+  {
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    if (!output) {
+      return false;
+    }
+    output << value.dump(2) << '\n';
+    output.flush();
+    if (!output) {
+      fs::remove(temporary, error);
+      return false;
+    }
+  }
+  fs::rename(temporary, target, error);
+  if (error) {
+    fs::remove(temporary, error);
+    return false;
+  }
+  return true;
+}
+
+/// 当前本地时间 `YYYY-MM-DD HH:MM:SS`，写入 Timers.json 供详情页只读判断。
+std::string format_local_datetime_now() {
+  const std::time_t now = std::time(nullptr);
+  std::tm local{};
+  ::localtime_r(&now, &local);
+  std::ostringstream output;
+  output << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
+  return output.str();
+}
+
+/// 解析 `YYYY-MM-DD HH:MM:SS` 本地时间；失败返回 nullopt。
+std::optional<std::chrono::system_clock::time_point> parse_local_datetime(std::string_view value) {
+  std::tm parsed{};
+  std::istringstream input{std::string(value)};
+  input >> std::get_time(&parsed, "%Y-%m-%d %H:%M:%S");
+  if (input.fail()) {
+    return std::nullopt;
+  }
+  const std::time_t timestamp = std::mktime(&parsed);
+  if (timestamp == static_cast<std::time_t>(-1)) {
+    return std::nullopt;
+  }
+  return std::chrono::system_clock::from_time_t(timestamp);
+}
+
+/**
+ * @brief 判断“未来 N 分钟内是否已存在来自 Stacks2 的日程”。
+ * @note 只读 Timers.json 中最近一次成功插入日历的日期时间，不调用 AppleScript；
+ *       日历未安装、窗口已占用均返回 false（隐藏插入入口）。
+ */
+bool calendar_window_free(const Context& context) {
+  if (!calendar_app_installed()) {
+    return false;
+  }
+  if (const auto override = calendar_window_override()) {
+    return *override;
+  }
+  const json timers = load_timer_db(context);
+  if (!timers.contains("last_calendar_insert") || !timers["last_calendar_insert"].is_string()) {
+    return true;
+  }
+  const auto last_insert = parse_local_datetime(timers["last_calendar_insert"].get<std::string>());
+  if (!last_insert) {
+    return true;
+  }
+  const int minutes = calendar_duration_minutes();
+  return std::chrono::system_clock::now() >= *last_insert + std::chrono::minutes(minutes);
+}
+
+/**
+ * @brief 在苹果日历中插入 Stacks2 日程（标题=任务标题，备注=描述 + 去重标记）。
+ * @return 成功返回日历事件 UID 前缀文本；窗口已占用/日历缺失返回错误。
+ */
+std::expected<std::string, std::string> calendar_insert_event(const Context& context,
+                                                              std::string_view title,
+                                                              std::string_view notes) {
+  if (!calendar_app_installed()) {
+    return std::unexpected("未安装苹果日历 / Calendar is not installed");
+  }
+  if (!calendar_window_free(context)) {
+    return std::unexpected(
+        "未来时段已存在来自 Stacks2 的日程，请稍后再试 / A Stacks2 calendar slot is already "
+        "reserved");
+  }
+  const int minutes = calendar_duration_minutes();
+  const std::string script = std::format(
+      "set startDate to (current date)\n"
+      "set endDate to startDate + ({} * minutes)\n"
+      "set targetCal to missing value\n"
+      "tell application \"Calendar\"\n"
+      "\trepeat with cal in calendars\n"
+      "\t\ttry\n"
+      // Calendar 字典中的属性名是 writable；writability 会被下方 try 静默吞掉。
+      "\t\t\tif writable of cal is true then\n"
+      "\t\t\t\tset targetCal to cal\n"
+      "\t\t\t\texit repeat\n"
+      "\t\t\tend if\n"
+      "\t\tend try\n"
+      "\tend repeat\n"
+      "\tif targetCal is missing value then return \"error:no-writable-calendar\"\n"
+      "\tset newEvent to make new event at end of events of targetCal with properties "
+      "{{summary:\"{}\", start date:startDate, end date:endDate, description:\"{}\"}}\n"
+      "\treturn \"created:\" & (uid of newEvent)\n"
+      "end tell\n",
+      minutes, escape_apple_string(title), escape_apple_string(notes));
+  const auto output = run_osascript(script);
+  if (!output) {
+    return std::unexpected("日历日程创建失败 / Failed to create the calendar event");
+  }
+  if (*output == "error:no-writable-calendar") {
+    return std::unexpected(
+        "苹果日历中没有可写日历，请检查日历账户权限 / "
+        "No writable Calendar is available");
+  }
+  if (!output->starts_with("created:")) {
+    return std::unexpected("日历返回了意外结果 / Calendar returned an unexpected result");
+  }
+  // 成功后把“最近一次插入日历”的日期时间写入 Timers.json；详情页只读该值判断窗口。
+  json timers = load_timer_db(context);
+  timers["last_calendar_insert"] = format_local_datetime_now();
+  if (!save_timer_db(context, timers)) {
+    return std::unexpected(
+        "日历日程已创建，但写入 Timers.json 失败 / Calendar event created "
+        "but the slot ledger failed to save");
+  }
+  return *output;
 }
 
 /**
@@ -533,6 +841,76 @@ std::optional<fs::path> resolve_workspace(const Context& context, std::string_vi
   return raw.is_absolute() ? std::optional<fs::path>(normalized_ui_path(raw)) : std::nullopt;
 }
 
+/**
+ * @brief 读取用户指定的默认收件箱路径。
+ * @note 只保存规范化绝对路径；路径是否仍然有效由展示层结合 list_workspaces 判定。
+ */
+std::optional<fs::path> default_inbox_path(const Context& context) {
+  const json state = load_ui_state(context);
+  if (!state.contains("default_inbox") || !state["default_inbox"].is_string()) {
+    return std::nullopt;
+  }
+  return normalized_ui_path(state["default_inbox"].get<std::string>());
+}
+
+/// 写入/重设默认收件箱；空值表示清除（例如工作区已被移除索引）。
+bool save_default_inbox(const Context& context, const std::optional<fs::path>& path) {
+  json state = load_ui_state(context);
+  if (path) {
+    state["default_inbox"] = normalized_ui_path(*path).string();
+  } else {
+    state.erase("default_inbox");
+  }
+  return save_ui_state(context, state);
+}
+
+/**
+ * @brief 读取固定的项目/看板 ID 列表。
+ * @note 固定只保存稳定主键，从不解析标题文本；标题自带 📌 不会被误判。
+ */
+std::vector<std::string> pinned_board_ids(const Context& context) {
+  std::vector<std::string> result;
+  const json state = load_ui_state(context);
+  if (!state.contains("pinned_boards") || !state["pinned_boards"].is_array()) {
+    return result;
+  }
+  for (const auto& value : state["pinned_boards"]) {
+    if (value.is_string() && !value.get<std::string>().empty()) {
+      result.push_back(value.get<std::string>());
+    }
+  }
+  return result;
+}
+
+/// 判断项目/看板是否已固定；主键不存在或状态损坏均按未固定处理。
+bool board_is_pinned(const Context& context, std::string_view board_id) {
+  const auto pinned = pinned_board_ids(context);
+  return std::ranges::find(pinned, board_id) != pinned.end();
+}
+
+/// 固定/取消固定；已存在时去重，失败保留旧状态。
+bool set_board_pinned(const Context& context, std::string_view board_id, bool pinned) {
+  json state = load_ui_state(context);
+  json ids = state.contains("pinned_boards") && state["pinned_boards"].is_array()
+                 ? state["pinned_boards"]
+                 : json::array();
+  std::vector<std::string> values;
+  for (const auto& value : ids) {
+    if (value.is_string()) {
+      values.push_back(value.get<std::string>());
+    }
+  }
+  std::erase(values, std::string(board_id));
+  if (pinned) {
+    values.push_back(std::string(board_id));
+  }
+  state["pinned_boards"] = json::array();
+  for (const auto& value : values) {
+    state["pinned_boards"].push_back(value);
+  }
+  return save_ui_state(context, state);
+}
+
 /// 任务文本字段按“标题|描述|开始|截止|优先级”拆分后的内部值。
 struct ParsedTaskInput {
   std::string title;        ///< 第一段，必填。
@@ -574,6 +952,17 @@ ParsedTaskInput parse_task_fields(std::string_view text) {
   for (auto& value : fields) {
     value = trim(std::move(value));
   }
+  // 简单语法：第二段若是优先级枚举，自动归入优先级（如 `title|high`）。
+  if (!fields[1].empty() && fields[4].empty()) {
+    std::string priority_candidate = fields[1];
+    std::ranges::transform(priority_candidate, priority_candidate.begin(),
+                           [](unsigned char character) { return std::tolower(character); });
+    if (priority_candidate == "low" || priority_candidate == "medium" ||
+        priority_candidate == "high" || priority_candidate == "critical") {
+      fields[4] = std::move(fields[1]);
+      fields[1].clear();
+    }
+  }
   return {
       .title = std::move(fields[0]),
       .description = std::move(fields[1]),
@@ -586,6 +975,11 @@ ParsedTaskInput parse_task_fields(std::string_view text) {
 /// 当前本地日期，用作新建任务的开始日期默认值。
 std::string today_iso() {
   return TaskManager::normalize_date("today").value_or("");
+}
+
+/// 明天本地日期，用作新建任务的截止日期默认值。
+std::string tomorrow_iso() {
+  return TaskManager::normalize_date("tomorrow").value_or("");
 }
 
 /// 把 TaskRecord 批量映射为任务条目；无结果时返回统一说明行。
@@ -740,7 +1134,8 @@ json creation_form_items(std::string_view target_kind, std::string_view target_t
       parsed.description.empty() ? "（可空）" : one_line(parsed.description);
   const std::string start_value =
       parsed.start_date.empty() ? today_iso() : one_line(parsed.start_date);
-  const std::string due_value = parsed.due_date.empty() ? "（未设置）" : one_line(parsed.due_date);
+  const std::string due_value =
+      parsed.due_date.empty() ? tomorrow_iso() : one_line(parsed.due_date);
   const std::string priority_value = parsed.priority.empty() ? "low" : one_line(parsed.priority);
   const std::string action =
       std::format("create-preview:{}:{}:{}", target_kind, target_token, base64url_encode(payload));
@@ -758,7 +1153,7 @@ json creation_form_items(std::string_view target_kind, std::string_view target_t
                        "Default: today · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD",
                        action, "", can_create, icon_week()));
   items.push_back(item(std::format("截止：{}", due_value),
-                       "Default: unset · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD",
+                       "Default: tomorrow · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD",
                        action, "", can_create, icon_week()));
   items.push_back(item(std::format("优先级：{}", priority_value),
                        "Default: low · Allowed: low, medium, high, critical", action, "",
@@ -843,10 +1238,319 @@ json config_items(const Context& context) {
 }
 
 /**
- * @brief 渲染一个 Inbox 工作区：空输入显示任务，输入五字段后切换为创建面板。
+ * @brief 渲染 `s di` 工作区列表：回车进入“设为默认收件箱”确认页。
+ * @note 当前默认收件箱以标题末尾 ⭐ 标识；默认值只存在一个。
+ */
+json default_inbox_items(const Context& context) {
+  json items = json::array();
+  const auto workspaces =
+      ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+  if (!workspaces) {
+    items.push_back(error_item(std::string(ProjectSync::sync_error_message(workspaces.error()))));
+    items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                         " ", false, icon_note()));
+    return items;
+  }
+  if (workspaces->empty()) {
+    items.push_back(item("尚无可设置的收件箱",
+                         bilingual("先执行 s ap 添加路径", "Run s ap to add a library first"), "",
+                         "", false, icon_inbox()));
+    items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                         " ", false, icon_note()));
+    return items;
+  }
+
+  const auto current_default = default_inbox_path(context);
+  for (const auto& workspace : *workspaces) {
+    const bool is_default =
+        current_default && normalized_ui_path(workspace.path) == *current_default;
+    const std::string short_handle = workspace_handle(context, workspace.path);
+    const bool valid = workspace.structure_valid;
+    items.push_back(item(
+        std::format("收件箱路径｜{}{}", workspace.path.filename().string(),
+                    is_default ? " ⭐" : ""),
+        bilingual(std::format("{} · {} · 回车进入设为默认收件箱确认", workspace.path.string(),
+                              valid ? "结构有效" : "结构无效，请先修复"),
+                  valid ? "Valid workspace · press Enter to set it as the default Inbox"
+                        : "Invalid workspace · repair it before setting as default"),
+        "",
+        valid ? std::format("default-inbox:{} {}", short_handle, handle_sentinel_from_env()) : "",
+        false, valid ? icon_inbox() : icon_info()));
+  }
+  items.push_back(
+      item("默认收件箱说明 / Default inbox",
+           bilingual("回车上方路径设置默认收件箱；重复执行可重设，默认收件箱只有一个",
+                     "Press Enter on a path to set the single default Inbox; run again to reset"),
+           "", "", false, icon_info()));
+  items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "", " ",
+                       false, icon_note()));
+  return items;
+}
+
+/// 项目/看板条目标题；`suffix` 仅附加在标题末尾，不修改任何业务名称。
+std::string board_display_title(const TaskManager::BoardTarget& board, std::string_view suffix) {
+  return board.kind == "project"
+             ? std::format("项目｜{}{}", board.title, suffix)
+             : std::format("项目｜{}  →  清单｜{}{}", board.project_title, board.title, suffix);
+}
+
+/**
+ * @brief 渲染 `s pin` 项目/看板列表：回车进入固定/取消固定确认页。
+ * @note 已固定条目排在最前并以标题末尾 📌 标识；固定状态只按主键保存。
+ */
+json pin_items(const Context& context, std::string_view query) {
+  json items = json::array();
+  const auto boards = TaskManager::list_boards(context.databases);
+  if (!boards) {
+    items.push_back(error_item(std::string(TaskManager::task_error_message(boards.error()))));
+    items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                         " ", false, icon_note()));
+    return items;
+  }
+
+  std::vector<TaskManager::BoardTarget> pinned;
+  std::vector<TaskManager::BoardTarget> others;
+  for (const auto& board : sorted_matching_boards(*boards, query)) {
+    (board_is_pinned(context, board.id) ? pinned : others).push_back(board);
+  }
+  const auto render_row = [&](const TaskManager::BoardTarget& board) {
+    const bool is_pinned = board_is_pinned(context, board.id);
+    const std::string short_handle = remember_handle(context, "board", board.id);
+    items.push_back(
+        item(board_display_title(board, is_pinned ? " 📌" : ""),
+             bilingual(std::format("{} · 回车进入{}固定确认",
+                                   board.library_path.filename().string(), is_pinned ? "取消" : ""),
+                       std::format("{} · press Enter to {}pin",
+                                   board.library_path.filename().string(), is_pinned ? "un" : "")),
+             "", std::format("pin:{} {}", short_handle, handle_sentinel_from_env()), false,
+             is_pinned ? icon_stack() : (board.kind == "project" ? icon_project() : icon_stack())));
+  };
+  for (const auto& board : pinned) {
+    render_row(board);
+  }
+  for (const auto& board : others) {
+    render_row(board);
+  }
+  if (items.empty()) {
+    items.push_back(item("项目/清单｜没有匹配结果",
+                         bilingual("先执行 s ap 添加路径，或 s rl 重载全部路径",
+                                   "Run s ap to add a path, or s rl to reload all paths"),
+                         "", "", false, icon_project()));
+  }
+  items.push_back(item(
+      "固定项目/看板说明 / Pin boards",
+      bilingual("回车固定或取消固定；固定仅影响排序，标题自带 📌 不会被误判",
+                "Press Enter to pin/unpin; pinning only affects ordering, literal 📌 titles are "
+                "never rewritten"),
+      "", "", false, icon_info()));
+  items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "", " ",
+                       false, icon_note()));
+  return items;
+}
+
+/// `s di` 回车后的二次确认页。
+json default_inbox_confirm_items(const Context& context, std::string_view token) {
+  const auto path = resolve_workspace(context, token);
+  if (!path) {
+    return json::array({error_item("工作区句柄已失效", "Workspace handle is invalid")});
+  }
+  const std::string short_handle = workspace_handle(context, *path);
+  const bool is_default = default_inbox_path(context) == *path;
+  json items = json::array();
+  items.push_back(item(
+      std::format("设为默认收件箱？｜{}{}", path->filename().string(), is_default ? " ⭐" : ""),
+      bilingual(
+          std::format("{} · 之后 s di / s i 中该收件箱显示 ⭐", path->string()),
+          std::format("{} · this Inbox will be marked with ⭐ in s di / s i", path->string())),
+      "", "", false, icon_inbox()));
+  items.push_back(item("是，设为默认收件箱 / Set default",
+                       bilingual("再次回车执行；默认收件箱只有一个，可随时重设",
+                                 "Press Enter to set the single default Inbox; reset anytime"),
+                       std::format("default-inbox-confirm:{}", short_handle), "", true,
+                       icon_inbox()));
+  items.push_back(item("否，返回收件箱列表 / Back", bilingual("不修改默认收件箱", "Keep unchanged"),
+                       "", "default-inbox", false, icon_note()));
+  return items;
+}
+
+/// `s pin` 回车后的固定/取消固定确认页。
+json pin_confirm_items(const Context& context, std::string_view token) {
+  const auto board_id = resolve_handle(context, "board", token);
+  if (!board_id) {
+    return json::array({error_item("项目/清单句柄已失效", "Board handle is invalid")});
+  }
+  const auto boards = TaskManager::list_boards(context.databases);
+  if (!boards) {
+    return json::array({error_item(std::string(TaskManager::task_error_message(boards.error())))});
+  }
+  const auto board = std::ranges::find_if(
+      *boards, [&](const TaskManager::BoardTarget& value) { return value.id == *board_id; });
+  if (board == boards->end()) {
+    return json::array({error_item("找不到目标项目/清单", "Board not found")});
+  }
+  const bool is_pinned = board_is_pinned(context, *board_id);
+  const std::string short_handle = remember_handle(context, "board", *board_id);
+  json items = json::array();
+  items.push_back(
+      item(std::format("{}固定？｜{}{}", is_pinned ? "取消" : "", board_display_title(*board, ""),
+                       is_pinned ? " 📌" : ""),
+           bilingual(is_pinned ? "取消后恢复普通排序，不修改项目/清单名称"
+                               : "固定后仅优先显示，不修改项目/清单名称",
+                     is_pinned ? "Unpin to restore normal ordering; names are never rewritten"
+                               : "Pinned boards are only listed first; names are never rewritten"),
+           "", "", false, is_pinned ? icon_stack() : icon_note()));
+  items.push_back(
+      item(is_pinned ? "是，取消固定 / Unpin" : "是，固定 / Pin",
+           bilingual(is_pinned ? "再次回车取消固定" : "再次回车固定此项目/清单",
+                     is_pinned ? "Press Enter to unpin" : "Press Enter to pin this board"),
+           std::format("{}:{}", is_pinned ? "pin-unconfirm" : "pin-confirm", short_handle), "",
+           true, icon_stack()));
+  items.push_back(item("否，返回项目/清单列表 / Back",
+                       bilingual("不修改固定状态", "Keep pin state unchanged"), "", "pin", false,
+                       icon_note()));
+  return items;
+}
+
+/**
+ * @brief 非法触发词的六行创建面板：输入五字段，回车进入默认收件箱 + 固定看板聚合目标列表。
+ * @note 六行共享 `choose-target:<base64(payload)>` autocomplete 且 valid=false；
+ *       回车只补全查询，由 filter 渲染目标列表，不进入 action 分发器。
+ */
+json choose_target_form_items(std::string_view payload) {
+  json items = json::array();
+  const ParsedTaskInput parsed = parse_task_fields(payload);
+  const std::string next_query = std::format("choose-target:{}", base64url_encode(payload));
+  const bool can_create = !parsed.title.empty();
+  items.push_back(item(
+      std::format("标题：{}", parsed.title.empty() ? "（请输入，必填）" : one_line(parsed.title)),
+      bilingual("必填 · 输入框格式中的第 1 段", "Required · first pipe-separated field"), "",
+      can_create ? next_query : "", false, icon_task()));
+  items.push_back(
+      item(std::format("描述：{}",
+                       parsed.description.empty() ? "（可空）" : one_line(parsed.description)),
+           bilingual("可空 · 输入框格式中的第 2 段", "Optional · second pipe-separated field"), "",
+           can_create ? next_query : "", false, icon_note()));
+  items.push_back(
+      item(std::format("开始：{}",
+                       parsed.start_date.empty() ? today_iso() : one_line(parsed.start_date)),
+           "Default: today · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD", "",
+           can_create ? next_query : "", false, icon_week()));
+  items.push_back(item(
+      std::format("截止：{}", parsed.due_date.empty() ? tomorrow_iso() : one_line(parsed.due_date)),
+      "Default: tomorrow · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD", "",
+      can_create ? next_query : "", false, icon_week()));
+  items.push_back(
+      item(std::format("优先级：{}", parsed.priority.empty() ? "low" : one_line(parsed.priority)),
+           "Default: low · Allowed: low, medium, high, critical", "", can_create ? next_query : "",
+           false, icon_task()));
+  items.push_back(
+      item("回车选择创建目标 / Choose target",
+           bilingual("目标顺序：⭐默认收件箱 → 📌固定项目/看板；回车创建",
+                     "Target order: ⭐ default Inbox → 📌 pinned boards; press Enter to create"),
+           "", can_create ? next_query : "", false, icon_task()));
+  return items;
+}
+
+/**
+ * @brief 渲染非法触发词的聚合创建目标：默认收件箱第一，随后是仍存在的固定项目/看板。
+ * @param payload base64url 编码的五字段输入，最终随 choose-create 提交。
+ */
+json choose_target_items(const Context& context, std::string_view payload) {
+  json items = json::array();
+  const auto workspaces =
+      ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+  const auto boards = TaskManager::list_boards(context.databases);
+  if (!workspaces || !boards) {
+    items.push_back(
+        error_item(!workspaces ? std::string(ProjectSync::sync_error_message(workspaces.error()))
+                               : std::string(TaskManager::task_error_message(boards.error()))));
+    return items;
+  }
+
+  const auto default_path = default_inbox_path(context);
+  const auto default_workspace =
+      default_path
+          ? std::ranges::find_if(*workspaces,
+                                 [&](const ProjectSync::WorkspaceStatus& value) {
+                                   return normalized_ui_path(value.path) == *default_path &&
+                                          value.structure_valid;
+                                 })
+          : workspaces->end();
+  if (default_workspace != workspaces->end()) {
+    const std::string short_handle = workspace_handle(context, default_workspace->path);
+    items.push_back(item(
+        std::format("收件箱｜⭐ {}", default_workspace->path.filename().string()),
+        bilingual(std::format("{} · 回车创建到默认收件箱", default_workspace->path.string()),
+                  std::format("{} · press Enter to create in the default Inbox",
+                              default_workspace->path.string())),
+        std::format("choose-create:inbox:{}:{}", short_handle, payload), "", true, icon_inbox()));
+  } else {
+    items.push_back(
+        item("未设置默认收件箱 / No default Inbox",
+             bilingual("先执行 s di 指定默认收件箱，或继续使用下方固定项目/看板",
+                       "Run s di to choose a default Inbox, or use a pinned board below"),
+             "", "", false, icon_inbox()));
+  }
+
+  std::size_t pinned_count = 0;
+  for (const auto& board : *boards) {
+    if (!board_is_pinned(context, board.id)) {
+      continue;
+    }
+    ++pinned_count;
+    const std::string short_handle = remember_handle(context, "board", board.id);
+    items.push_back(item(
+        board_display_title(board, " 📌"),
+        bilingual(std::format("{} · 回车创建到该项目/清单", board.library_path.filename().string()),
+                  std::format("{} · press Enter to create in this board",
+                              board.library_path.filename().string())),
+        std::format("choose-create:board:{}:{}", short_handle, payload), "", true,
+        board.kind == "project" ? icon_project() : icon_stack()));
+  }
+
+  // 既没有默认收件箱也没有固定项目/看板时，引导用户先维护偏好。
+  // 提示中的触发词全部读取 Alfred 配置变量，不写死默认值。
+  if (default_workspace == workspaces->end() && pinned_count == 0) {
+    items.clear();
+    const std::string default_alias = alias_from_env("STACKS_ALIAS_DEFAULT_INBOX", "di");
+    const std::string pin_alias = alias_from_env("STACKS_ALIAS_PIN", "pin");
+    const std::string inbox_alias = alias_from_env("STACKS_ALIAS_INBOX", "i");
+    const std::string view_alias = alias_from_env("STACKS_ALIAS_VIEW", "v");
+    items.push_back(item(
+        "请先维护创建目标 / Configure create targets",
+        bilingual(std::format("运行 s {} 设置默认收件箱，或 s {} 固定常用项目/看板；也可以直接 "
+                              "用 s {} / s {} 进入收件箱或项目看板",
+                              default_alias, pin_alias, inbox_alias, view_alias),
+                  std::format("Run s {} to set the default Inbox, or s {} to pin boards; you can "
+                              "also use s {} / s {} directly",
+                              default_alias, pin_alias, inbox_alias, view_alias)),
+        "", "", false, icon_info()));
+    items.push_back(item("← 返回上一级 / Back",
+                         bilingual("返回六行创建面板", "Back to the six-row create panel"), "", "",
+                         false, icon_note()));
+    return items;
+  }
+
+  items.push_back(item(
+      "创建目标说明 / Create target",
+      bilingual(
+          "默认收件箱优先，其次固定项目/看板；可用 s di 重设默认，s pin 维护固定列表",
+          "Default Inbox first, then pinned boards; s di resets the default, s pin edits pins"),
+      "", "", false, icon_info()));
+  items.push_back(item("← 返回上一级 / Back",
+                       bilingual("返回六行创建面板", "Back to the six-row create panel"), "", "",
+                       false, icon_note()));
+  return items;
+}
+
+/**
+ * @brief 渲染一个 Inbox 工作区：空输入显示任务，输入先模糊搜索，无命中再切换为创建面板。
  * @param context Alfred 运行上下文与项目数据库路径。
  * @param path 当前 Inbox 工作区。
- * @param raw_payload `标题|描述|开始|截止|优先级` 原始输入。
+ * @param raw_payload 输入框后缀；优先作为标题/描述模糊关键词，无命中时作为
+ *                    `标题|描述|开始|截止|优先级` 进入创建面板。
+ * @note 模糊匹配复用 TaskManager::list_tasks 的 options.query，排序规则与
+ *       `s t` 完全一致：标题命中优先于描述命中。
  */
 json inbox_workspace_items(const Context& context, const fs::path& path,
                            std::string_view raw_payload) {
@@ -865,12 +1569,10 @@ json inbox_workspace_items(const Context& context, const fs::path& path,
   const std::string payload = strip_input_sentinel(raw_payload);
   const std::string label = std::format("工作区 {}", workspace_path.filename().string());
   const std::string target_token = workspace_handle(context, workspace_path);
-  if (!payload.empty()) {
-    return creation_form_items("inbox", target_token, label, payload);
-  }
 
   TaskManager::TaskListOptions options;
   options.target = TaskManager::TargetId("inbox");
+  options.query = payload;
   apply_task_visibility(options);
   const auto tasks = TaskManager::list_tasks(context.databases, options);
   if (!tasks) {
@@ -883,6 +1585,12 @@ json inbox_workspace_items(const Context& context, const fs::path& path,
       filtered.push_back(task);
     }
   }
+
+  // 输入无命中时复用单输入框五字段创建面板，保证搜索与新建自然衔接。
+  if (!payload.empty() && filtered.empty()) {
+    return creation_form_items("inbox", target_token, label, payload);
+  }
+
   if (!filtered.empty()) {
     const json task_rows = task_items(context, filtered);
     for (const auto& task : task_rows) {
@@ -894,10 +1602,17 @@ json inbox_workspace_items(const Context& context, const fs::path& path,
              bilingual("在输入框直接输入创建参数即可新建", "Type a pipe-separated task below"), "",
              "", false, icon_inbox()));
   }
+  const std::string help_title = payload.empty()
+                                     ? "搜索或新建任务 / Search or create"
+                                     : std::format("搜索｜{} · {} 项", payload, filtered.size());
   items.push_back(
-      item("新建任务输入格式 / Create task",
-           bilingual("在输入框输入：标题|描述|开始|截止|优先级；输入后显示六行创建面板",
-                     "Type title|description|start|due|priority in the Alfred query field"),
+      item(help_title,
+           payload.empty()
+               ? bilingual("输入关键词模糊搜索（标题优先、描述其次）；无命中自动进入创建面板",
+                           "Type a keyword to fuzzy-search tasks; no match opens the create panel")
+               : bilingual("未命中会切换为六行创建面板；也可直接输入标题|描述|开始|截止|优先级",
+                           "No match switches to the six-row create panel; pipe-separated fields "
+                           "also create directly"),
            "", "", false, icon_info()));
   items.push_back(item("← 返回路径列表 / Back", bilingual("返回全部收件箱工作区", "Back"), "",
                        "inbox ", false, icon_note()));
@@ -935,6 +1650,28 @@ json task_detail(const Context& context, const TaskManager::TaskRecord& task,
                                  task.due_date.empty() ? "none" : task.due_date,
                                  task.priority.empty() ? "none" : task.priority, task_handle)),
            "", "", false, icon_task());
+
+  // 优先操作一：新建日历日程（日历已安装且未来 N 分钟窗口未被 Stacks2 日程占用）。
+  if (calendar_window_free(context)) {
+    const int minutes = calendar_duration_minutes();
+    items.push_back(item(
+        std::format("新建日历日程（Stacks2 独占 {} 分钟）", minutes),
+        bilingual(
+            std::format("标题=任务标题，备注=描述；未来 {} 分钟内只能插入一次", minutes, minutes),
+            std::format("Calendar event with task title/description; one Stacks2 slot per "
+                        "{} minutes",
+                        minutes)),
+        std::format("calendar-create:{}", task.id), "", true,
+        app_icon("Calendar.app", "AppIcon.icns")));
+  }
+
+  // 优先操作二：同步到 OmniFocus（需要截止日期且本机已安装）。
+  if (!task.due_date.empty() && omnifocus_app_installed()) {
+    items.push_back(
+        item("同步到 OmniFocus",
+             bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
+             std::format("sync:{}:omnifocus", task.id), "", true, icon_sync()));
+  }
 
   // 编辑组：条目本身不可选，autocomplete 让用户先输入值，再由 filter 生成 action。
   items.push_back(item(
@@ -980,21 +1717,29 @@ json task_detail(const Context& context, const TaskManager::TaskRecord& task,
            bilingual("生成 Stacks 兼容 timelog", "Stop and write a Stacks-compatible timelog"),
            std::format("timer-stop:{}", task.id), "", true, icon_timer()));
 
-  // 外部提醒同步要求 duedate；无截止日期时显示不可选原因，不提前调用应用。
+  // 外部提醒同步要求 duedate，且只展示本机已安装的应用。
   if (!task.due_date.empty()) {
-    items.push_back(
-        item("同步到 Apple 提醒",
-             bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
-             std::format("sync:{}:reminders", task.id), "", true,
-             app_icon("Reminders.app", "AppIcon.icns")));
-    items.push_back(
-        item("同步到 OmniFocus",
-             bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
-             std::format("sync:{}:omnifocus", task.id), "", true, icon_sync()));
-    items.push_back(
-        item("同步到提醒 + OmniFocus",
-             bilingual("按 Stacks-ID 去重并更新", "Deduplicate and update by Stacks-ID"),
-             std::format("sync:{}:both", task.id), "", true, icon_sync()));
+    const bool reminders_ready = reminders_app_installed();
+    const bool omnifocus_ready = omnifocus_app_installed();
+    if (reminders_ready) {
+      items.push_back(item(
+          "同步到 Apple 提醒",
+          bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
+          std::format("sync:{}:reminders", task.id), "", true,
+          app_icon("Reminders.app", "AppIcon.icns")));
+    }
+    if (reminders_ready && omnifocus_ready) {
+      items.push_back(
+          item("同步到提醒 + OmniFocus",
+               bilingual("按 Stacks-ID 去重并更新", "Deduplicate and update by Stacks-ID"),
+               std::format("sync:{}:both", task.id), "", true, icon_sync()));
+    }
+    if (!reminders_ready && !omnifocus_ready) {
+      items.push_back(item("提醒同步不可用",
+                           bilingual("本机未安装 Apple 提醒与 OmniFocus",
+                                     "Reminders and OmniFocus are not installed"),
+                           "", "", false, icon_info()));
+    }
   } else {
     items.push_back(
         item("提醒同步不可用",
@@ -1041,6 +1786,17 @@ std::optional<ReminderSync::Provider> parse_provider(std::string_view value) {
   return std::nullopt;
 }
 
+/// 同步目标应用是否已安装；未安装时不允许执行对应同步。
+bool provider_available(ReminderSync::Provider provider) {
+  if (provider == ReminderSync::Provider::reminders) {
+    return reminders_app_installed();
+  }
+  if (provider == ReminderSync::Provider::omnifocus) {
+    return omnifocus_app_installed();
+  }
+  return reminders_app_installed() && omnifocus_app_installed();
+}
+
 /// TaskManager 错误转换为 WorkflowUI 的 string error 通道。
 std::expected<std::string, std::string> task_error(TaskManager::TaskError error) {
   return std::unexpected(std::string(TaskManager::task_error_message(error)));
@@ -1054,6 +1810,9 @@ std::expected<std::string, std::string> sync_single(const Context& context,
                                                     std::string_view task_id,
                                                     ReminderSync::Provider provider,
                                                     bool dry_run = false) {
+  if (!provider_available(provider)) {
+    return std::unexpected("同步目标应用未安装 / Sync target app is not installed");
+  }
   const auto task =
       TaskManager::get_task(TaskManager::TaskId(std::string(task_id)), context.databases);
   if (!task) {
@@ -1075,6 +1834,67 @@ std::expected<std::string, std::string> sync_single(const Context& context,
   }
   return std::format("已同步到 {} · {}\nSynced to {} · {}", provider_label(provider),
                      result->marker, provider_label(provider), result->marker);
+}
+
+/**
+ * @brief 按目标类型执行五字段创建，供 create-preview 与 choose-create 复用。
+ * @param kind `board` 或 `inbox`；target_token 是 UiState 中的短句柄。
+ */
+std::expected<std::string, std::string> create_task_for_target(const Context& context,
+                                                               std::string_view kind,
+                                                               std::string_view target_token,
+                                                               std::string_view raw_payload) {
+  const auto payload = base64url_decode(raw_payload);
+  if (!payload) {
+    return std::unexpected("invalid create payload");
+  }
+  const ParsedTaskInput parsed = parse_task_fields(*payload);
+  if (parsed.title.empty()) {
+    return std::unexpected("任务标题不能为空 / Task title is required");
+  }
+  const std::string start_date = parsed.start_date.empty() ? today_iso() : parsed.start_date;
+  const std::string due_date = parsed.due_date.empty() ? tomorrow_iso() : parsed.due_date;
+  const std::string priority = parsed.priority.empty() ? "low" : parsed.priority;
+  const TaskManager::TaskInput input{
+      TaskManager::TaskTitle(parsed.title),
+      TaskManager::TaskDescription(parsed.description),
+      start_date.empty() ? std::nullopt : std::optional<std::string>(start_date),
+      due_date.empty() ? std::nullopt : std::optional<std::string>(due_date),
+      priority,
+  };
+  TaskManager::CreateTaskOptions options{context.databases, context.inbox_library};
+  std::expected<TaskManager::TaskResult, TaskManager::TaskError> created =
+      std::unexpected(TaskManager::TaskError::target_not_found);
+  if (kind == "board") {
+    const auto target = resolve_handle(context, "board", target_token);
+    if (!target) {
+      return std::unexpected("项目/清单句柄已失效 / Board handle is invalid");
+    }
+    created = TaskManager::create_task(TaskManager::TargetId(*target), input, options);
+  } else if (kind == "inbox") {
+    const auto resolved = resolve_workspace(context, target_token);
+    if (!resolved) {
+      return std::unexpected("工作区路径无效 / Invalid Inbox workspace");
+    }
+    const fs::path library = normalized_ui_path(*resolved);
+    const auto workspace = ProjectSync::inspect_workspace(library);
+    if (!workspace.structure_valid) {
+      return std::unexpected("工作区结构无效，不能创建 Inbox 任务 / Invalid workspace");
+    }
+    options.inbox_library = library;
+    created = TaskManager::create_inbox_task(input, options);
+  } else {
+    return std::unexpected("未知任务目标 / Unknown create target");
+  }
+  if (!created) {
+    return task_error(created.error());
+  }
+  const std::string short_handle = remember_handle(context, "task", created->task_id.value);
+  json state = load_ui_state(context);
+  state.erase("draft");
+  static_cast<void>(save_ui_state(context, state));
+  return std::format("任务已创建 · {}\nTask created · {}\n{}", one_line(parsed.title),
+                     one_line(parsed.title), "task:" + short_handle);
 }
 
 /**
@@ -1106,56 +1926,54 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
 
   // 单输入框五字段提交：create-preview:<board|inbox>:<target>:<base64(payload)>。
   if (command == "create-preview" && parts.size() == 4) {
-    const auto payload = base64url_decode(parts[3]);
-    if (!payload) {
-      return std::unexpected("invalid create payload");
+    return create_task_for_target(context, parts[1], parts[2], parts[3]);
+  }
+
+  // 非法触发词聚合创建：choose-create:<board|inbox>:<target>:<base64(payload)>。
+  if (command == "choose-create" && parts.size() == 4) {
+    return create_task_for_target(context, parts[1], parts[2], parts[3]);
+  }
+
+  // 设置/重设默认收件箱：default-inbox-confirm:<workspace-short-handle>。
+  if (command == "default-inbox-confirm" && parts.size() == 2) {
+    const auto path = resolve_workspace(context, parts[1]);
+    if (!path) {
+      return std::unexpected("工作区句柄已失效 / Workspace handle is invalid");
     }
-    const ParsedTaskInput parsed = parse_task_fields(*payload);
-    if (parsed.title.empty()) {
-      return std::unexpected("任务标题不能为空 / Task title is required");
+    const auto workspace = ProjectSync::inspect_workspace(*path);
+    if (!workspace.structure_valid) {
+      return std::unexpected("工作区结构无效，不能设为默认收件箱 / Invalid workspace");
     }
-    const std::string start_date = parsed.start_date.empty() ? today_iso() : parsed.start_date;
-    const std::string priority = parsed.priority.empty() ? "low" : parsed.priority;
-    const TaskManager::TaskInput input{
-        TaskManager::TaskTitle(parsed.title),
-        TaskManager::TaskDescription(parsed.description),
-        start_date.empty() ? std::nullopt : std::optional<std::string>(start_date),
-        parsed.due_date.empty() ? std::nullopt : std::optional<std::string>(parsed.due_date),
-        priority,
-    };
-    TaskManager::CreateTaskOptions options{context.databases, context.inbox_library};
-    std::expected<TaskManager::TaskResult, TaskManager::TaskError> created =
-        std::unexpected(TaskManager::TaskError::target_not_found);
-    if (parts[1] == "board") {
-      const auto target = resolve_handle(context, "board", parts[2]);
-      if (!target) {
-        return std::unexpected("项目/清单句柄已失效 / Board handle is invalid");
-      }
-      created = TaskManager::create_task(TaskManager::TargetId(*target), input, options);
-    } else if (parts[1] == "inbox") {
-      const auto resolved = resolve_workspace(context, parts[2]);
-      if (!resolved) {
-        return std::unexpected("工作区路径无效 / Invalid Inbox workspace");
-      }
-      const fs::path library = normalized_ui_path(*resolved);
-      const auto workspace = ProjectSync::inspect_workspace(library);
-      if (!workspace.structure_valid) {
-        return std::unexpected("工作区结构无效，不能创建 Inbox 任务 / Invalid workspace");
-      }
-      options.inbox_library = library;
-      created = TaskManager::create_inbox_task(input, options);
-    } else {
-      return std::unexpected("未知任务目标 / Unknown create target");
+    if (!save_default_inbox(context, *path)) {
+      return std::unexpected("保存默认收件箱失败 / Failed to save the default Inbox");
     }
-    if (!created) {
-      return task_error(created.error());
+    return std::format("⭐ 默认收件箱已设置 · {}\n⭐ Default Inbox set · {}",
+                       path->filename().string(), path->filename().string());
+  }
+
+  // 固定项目/看板：pin-confirm / pin-unconfirm:<board-short-handle>。
+  if ((command == "pin-confirm" || command == "pin-unconfirm") && parts.size() == 2) {
+    const auto board_id = resolve_handle(context, "board", parts[1]);
+    if (!board_id) {
+      return std::unexpected("项目/清单句柄已失效 / Board handle is invalid");
     }
-    const std::string short_handle = remember_handle(context, "task", created->task_id.value);
-    json state = load_ui_state(context);
-    state.erase("draft");
-    static_cast<void>(save_ui_state(context, state));
-    return std::format("任务已创建 · {}\nTask created · {}\n{}", one_line(parsed.title),
-                       one_line(parsed.title), "task:" + short_handle);
+    const auto boards = TaskManager::list_boards(context.databases);
+    if (!boards) {
+      return task_error(boards.error());
+    }
+    const auto board = std::ranges::find_if(
+        *boards, [&](const TaskManager::BoardTarget& value) { return value.id == *board_id; });
+    if (board == boards->end()) {
+      return std::unexpected("找不到目标项目/清单 / Board not found");
+    }
+    const bool pin = command == "pin-confirm";
+    if (!set_board_pinned(context, *board_id, pin)) {
+      return std::unexpected("保存固定状态失败 / Failed to save the pin state");
+    }
+    return pin ? std::format("📌 已固定 · {}\n📌 Pinned · {}", board_display_title(*board, ""),
+                             board_display_title(*board, ""))
+               : std::format("已取消固定 · {}\nUnpinned · {}", board_display_title(*board, ""),
+                             board_display_title(*board, ""));
   }
 
   // 创建任务：create:<board-id>:<base64(payload)>。
@@ -1173,7 +1991,8 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
             TaskManager::TaskDescription(parsed.description),
             parsed.start_date.empty() ? std::nullopt
                                       : std::optional<std::string>(parsed.start_date),
-            parsed.due_date.empty() ? std::nullopt : std::optional<std::string>(parsed.due_date),
+            parsed.due_date.empty() ? std::optional<std::string>(tomorrow_iso())
+                                    : std::optional<std::string>(parsed.due_date),
             parsed.priority,
         },
         options);
@@ -1205,7 +2024,8 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
             TaskManager::TaskDescription(parsed.description),
             parsed.start_date.empty() ? std::nullopt
                                       : std::optional<std::string>(parsed.start_date),
-            parsed.due_date.empty() ? std::nullopt : std::optional<std::string>(parsed.due_date),
+            parsed.due_date.empty() ? std::optional<std::string>(tomorrow_iso())
+                                    : std::optional<std::string>(parsed.due_date),
             parsed.priority,
         },
         options);
@@ -1286,6 +2106,24 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
     return std::format("计时已记录 · {} 秒\nTimer saved · {} seconds", result->duration_seconds,
                        result->duration_seconds);
   }
+  // 苹果日历日程插入：窗口空闲且日历已安装时执行；备注带 [Stacks2] 去重标记。
+  if (command == "calendar-create" && parts.size() == 2) {
+    const auto task = TaskManager::get_task(TaskManager::TaskId(parts[1]), context.databases);
+    if (!task) {
+      return task_error(task.error());
+    }
+    std::string notes = task->description;
+    if (!notes.empty()) {
+      notes += "\n";
+    }
+    notes += "[Stacks2]" + task->id;
+    const auto created = calendar_insert_event(context, task->title, notes);
+    if (!created) {
+      return std::unexpected(created.error());
+    }
+    return std::format("已在苹果日历创建日程 · {}\nCalendar event created · {}", task->title,
+                       task->title);
+  }
   if (command == "archive" && parts.size() == 2) {
     const auto result = TaskManager::archive_task(TaskManager::TaskId(parts[1]), context.databases);
     if (!result) {
@@ -1316,6 +2154,9 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
     const auto provider = parse_provider(parts[1]);
     if (!provider) {
       return std::unexpected("unknown sync provider");
+    }
+    if (!provider_available(*provider)) {
+      return std::unexpected("同步目标应用未安装 / Sync target app is not installed");
     }
     const auto tasks = TaskManager::list_week_due(context.databases);
     if (!tasks) {
@@ -1401,6 +2242,10 @@ std::expected<std::string, std::string> dispatch_action(const Context& context,
         iterator = remove ? values.erase(iterator) : std::next(iterator);
       }
     }
+    // 被移除的工作区若正是默认收件箱，同时清除默认值，避免列表继续引用失效路径。
+    if (default_inbox_path(context) == *workspace) {
+      state.erase("default_inbox");
+    }
     static_cast<void>(save_ui_state(context, state));
 
     return std::format(
@@ -1469,6 +2314,71 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
 
   try {
     const CommandAliases aliases;
+    // 判定 `s` 后的首词/前缀是否属于已知命令；未知触发词进入聚合创建流程。
+    const auto is_known_query = [&](std::string_view query) {
+      const std::string first_word = trim(std::string(query.substr(0, query.find(' '))));
+      const std::array<std::string_view, 26> known_words = {
+          "add",
+          "add-path",
+          "a",
+          "boards",
+          "b",
+          "board",
+          "tasks",
+          "week",
+          "timers",
+          "inbox",
+          "config",
+          "cf",
+          "di",
+          "default-inbox",
+          "pin",
+          "reload",
+          "reload-all",
+          aliases.add_path,
+          aliases.reload,
+          aliases.config,
+          aliases.view,
+          aliases.tasks,
+          aliases.week,
+          aliases.timers,
+          aliases.inbox,
+          aliases.default_inbox,
+      };
+      if (std::ranges::find(known_words, first_word) != known_words.end()) {
+        return true;
+      }
+      for (const std::string_view prefix : {"board:",
+                                            "add:",
+                                            "task:",
+                                            "inbox:",
+                                            "inbox-workspace:",
+                                            "inbox-create:",
+                                            "remove-path:",
+                                            "rename:",
+                                            "desc:",
+                                            "due:",
+                                            "start:",
+                                            "priority:",
+                                            "schedule:",
+                                            "timer:",
+                                            "delete:",
+                                            "default-inbox:",
+                                            "pin:",
+                                            "choose-target:",
+                                            "choose-create:",
+                                            "create-preview:",
+                                            "create:",
+                                            "create-inbox:",
+                                            "sync:",
+                                            "timer-start:",
+                                            "timer-stop:"}) {
+        if (query.starts_with(prefix)) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     // 空查询：第一行是所有操作说明，后面是可选命令和项目/清单三级入口。
     if (query.empty()) {
@@ -1476,13 +2386,15 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
           "所有可用操作",
           bilingual(
               std::format("{} 添加路径 · {} 重载 · {} 查看 · {} 搜索 · {} 本周 · {} 计时 · {} "
-                          "收件箱 · {} 配置",
+                          "收件箱 · {} 默认收件箱 · {} 固定 · {} 配置",
                           aliases.add_path, aliases.reload, aliases.view, aliases.tasks,
-                          aliases.week, aliases.timers, aliases.inbox, aliases.config),
+                          aliases.week, aliases.timers, aliases.inbox, aliases.default_inbox,
+                          aliases.pin, aliases.config),
               std::format("{} add path · {} reload · {} view · {} search · {} week · {} timers · "
-                          "{} inbox · {} config",
+                          "{} inbox · {} default inbox · {} pin · {} config",
                           aliases.add_path, aliases.reload, aliases.view, aliases.tasks,
-                          aliases.week, aliases.timers, aliases.inbox, aliases.config)),
+                          aliases.week, aliases.timers, aliases.inbox, aliases.default_inbox,
+                          aliases.pin, aliases.config)),
           "", "", false, icon_note());
       items.push_back(
           item("添加路径",
@@ -1522,6 +2434,19 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
                     std::format("inbox · {} — choose a library; first is default", aliases.inbox)),
           "", aliases.inbox + " ", false, icon_path(context)));
       items.push_back(
+          item("设置默认收件箱",
+               bilingual(std::format("default-inbox · {} — 指定唯一默认收件箱，⭐ 标识",
+                                     aliases.default_inbox),
+                         std::format("default-inbox · {} — set the single default Inbox, marked ⭐",
+                                     aliases.default_inbox)),
+               "", aliases.default_inbox, false, icon_inbox()));
+      items.push_back(item(
+          "固定常用项目 / 看板",
+          bilingual(
+              std::format("pin · {} — 固定后优先显示，📌 标识", aliases.pin),
+              std::format("pin · {} — pinned boards are listed first, marked 📌", aliases.pin)),
+          "", aliases.pin, false, icon_stack()));
+      items.push_back(
           item("路径配置",
                bilingual(std::format("config · {} — 查看已保存路径", aliases.config),
                          std::format("config · {} — inspect saved library paths", aliases.config)),
@@ -1537,6 +2462,28 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
       }
       items.push_back(help_item);
       return feedback(items);
+    }
+
+    // 默认收件箱：列出全部工作区，⭐ 标记当前默认；回车进入设置确认。
+    if (query == "default-inbox" || query == "di" || query == aliases.default_inbox) {
+      return feedback(default_inbox_items(context));
+    }
+    if (query.starts_with("default-inbox:")) {
+      return feedback(default_inbox_confirm_items(context, trim(query.substr(14))));
+    }
+
+    // 固定项目/看板：回车进入固定/取消固定确认；标题自带 📌 不参与状态判定。
+    if (query == "pin" || query.starts_with("pin ")) {
+      const std::string pin_query = query == "pin" ? "" : trim(query.substr(4));
+      return feedback(pin_items(context, pin_query));
+    }
+    if (query.starts_with("pin:")) {
+      return feedback(pin_confirm_items(context, trim(query.substr(4))));
+    }
+
+    // 非法触发词聚合创建：六行面板回车后选择 ⭐默认收件箱 / 📌固定项目看板。
+    if (query.starts_with("choose-target:")) {
+      return feedback(choose_target_items(context, query.substr(14)));
     }
 
     // 路径操作只返回一个可执行条目，避免 Alfred 对 action token 二次猜测。
@@ -1672,8 +2619,9 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
       }
       items.push_back(
           item("收件箱工作区说明 / Inbox workspace",
-               bilingual("回车上方路径查看该 Inbox 中已有任务；输入任务参数后进入创建面板",
-                         "Press Enter on a path to view its Inbox tasks"),
+               bilingual("回车查看任务；输入关键词模糊搜索，无命中自动进入六行创建面板",
+                         "Press Enter to view tasks; fuzzy-search by keyword, no match opens "
+                         "the create panel"),
                "", "", false, icon_info()));
       items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
                            " ", false, icon_note()));
@@ -1870,7 +2818,7 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
       return task_detail(context, *task, task_handle);
     }
 
-    // 单字段编辑先显示输入页，再生成对应 action 的确认条目。
+    // 单字段编辑：第一行显示原值，第二行显示待更新值；回车应用更改。
     for (const std::string_view command : {"rename:", "desc:", "due:", "start:", "priority:"}) {
       if (!query.starts_with(command)) {
         continue;
@@ -1883,28 +2831,64 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
         return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
       }
       const std::string task_handle = remember_handle(context, "task", *resolved_id);
-      if (trim(payload).empty()) {
-        const std::string label = command == "rename:"  ? "新标题"
-                                  : command == "desc:"  ? "新描述"
-                                  : command == "due:"   ? "截止日期"
-                                  : command == "start:" ? "开始日期"
-                                                        : "优先级";
-        const std::string english = command == "priority:" ? "Type low, medium, high or critical"
-                                                           : "Type the new value, then press Enter";
-        return feedback(json::array(
-            {item(std::format("填写{}", label),
-                  bilingual(command == "priority:"
-                                ? "可选：low/低、medium/中、high/高、critical/紧急"
-                                : "继续输入；日期可用 today、tomorrow、+3d、monday 或 YYYY-MM-DD",
-                            english),
-                  "", "", false, icon_info())}));
+      const auto task = TaskManager::get_task(TaskManager::TaskId(*resolved_id), context.databases);
+      if (!task) {
+        return feedback(
+            json::array({error_item(std::string(TaskManager::task_error_message(task.error())))}));
       }
-      const std::string action_prefix(command.substr(0, command.size() - 1));
-      return feedback(json::array(
-          {item(std::format("三级：任务｜应用更改：{}", trim(payload)),
-                bilingual(std::format("任务 {}", task_handle), std::format("Task {}", task_handle)),
-                std::format("{}:{}:{}", action_prefix, *resolved_id, base64url_encode(payload)), "",
-                true, icon_task())}));
+      const std::string label = command == "rename:"  ? "原标题"
+                                : command == "desc:"  ? "原描述"
+                                : command == "due:"   ? "原截止日期"
+                                : command == "start:" ? "原开始日期"
+                                                      : "原优先级";
+      const std::string english_label = command == "rename:"  ? "Current title"
+                                        : command == "desc:"  ? "Current description"
+                                        : command == "due:"   ? "Current due date"
+                                        : command == "start:" ? "Current start date"
+                                                              : "Current priority";
+      const std::string current =
+          command == "rename:" ? task->title
+          : command == "desc:" ? (task->description.empty() ? "（空）" : task->description)
+          : command == "due:"  ? (task->due_date.empty() ? "（未设置）" : task->due_date)
+          : command == "start:"
+              ? (task->start_date.empty() ? "（未设置）" : task->start_date)
+              : (task->priority.empty() ? "（未设置）" : priority_label(task->priority));
+      const std::string new_label = command == "rename:"  ? "新标题"
+                                    : command == "desc:"  ? "新描述"
+                                    : command == "due:"   ? "新截止日期"
+                                    : command == "start:" ? "新开始日期"
+                                                          : "新优先级";
+      json rows = json::array();
+      if (trim(payload).empty()) {
+        rows.push_back(
+            item(std::format("{}：（继续输入）", new_label),
+                 bilingual(command == "priority:"
+                               ? "可选：low/低、medium/中、high/高、critical/紧急"
+                               : "日期可用 today、tomorrow、+3d、monday 或 YYYY-MM-DD",
+                           command == "priority:" ? "Type low, medium, high or critical"
+                                                  : "Type the new value, then press Enter"),
+                 "", std::format("{}{} {} ", command, task_handle, handle_sentinel_from_env()),
+                 false, icon_info()));
+      } else {
+        const std::string action_prefix(command.substr(0, command.size() - 1));
+        rows.push_back(item(
+            std::format("{}：{}", new_label, one_line(trim(payload))),
+            bilingual(std::format("回车应用更改 · 任务 {}", task_handle),
+                      std::format("Press Enter to apply · Task {}", task_handle)),
+            std::format("{}:{}:{}", action_prefix, *resolved_id, base64url_encode(trim(payload))),
+            "", true, icon_task()));
+      }
+      // 第一行永远是“新值”，保证选中后回车直接执行更新；原值仅作第二行参考。
+      rows.push_back(
+          item(std::format("{}：{}", label, current),
+               bilingual(std::format("{} · 参考原值直接重新输入，无需复制粘贴", english_label),
+                         "Reference row; retype the value without copy-paste"),
+               "", "", false, icon_note()));
+      rows.push_back(item("← 返回任务详情 / Back",
+                          bilingual("不修改此字段", "Return without changing this field"), "",
+                          std::format("task:{} {}", task_handle, handle_sentinel_from_env()), false,
+                          icon_note()));
+      return feedback(rows);
     }
 
     // 开始/截止区间必须一次输入两端，后端统一校验先后关系。
@@ -1967,18 +2951,13 @@ std::string filter_impl(const Context& context, std::string_view raw_query) {
           false, system_icon("ToolbarDeleteIcon.icns"))}));
     }
 
-    // 默认分支把任意文本视为任务字段，每个项目/清单都显示创建预览。
-    {
-      const auto boards = TaskManager::list_boards(context.databases);
-      if (!boards) {
-        return feedback(json::array(
-            {error_item(std::string(TaskManager::task_error_message(boards.error())))}));
-      }
-      return feedback(board_items(context, *boards, "", true, query));
+    // 非命令触发词：先显示六行创建面板，回车后再选 ⭐默认收件箱 / 📌固定项目看板。
+    if (!is_known_query(query)) {
+      return feedback(choose_target_form_items(query));
     }
 
-    return feedback(json::array(
-        {error_item("没有匹配的命令", "按 Esc 回到 s 总览；可用 ap、rl、v、t、w、tm、i、cf")}));
+    return feedback(json::array({error_item(
+        "没有匹配的命令", "按 Esc 回到 s 总览；可用 ap、rl、v、t、w、tm、i、di、pin、cf")}));
   } catch (const std::exception& error) {
     // UI 适配层最后一道异常边界；任何异常转换为可选错误条目而非崩溃 Alfred。
     return feedback(

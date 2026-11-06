@@ -48,7 +48,9 @@ alias_tasks="${STACKS_ALIAS_TASKS:-t}"
 alias_week="${STACKS_ALIAS_WEEK:-w}"
 alias_timers="${STACKS_ALIAS_TIMERS:-tm}"
 alias_inbox="${STACKS_ALIAS_INBOX:-i}"
-trace "3.aliases=add:$alias_add_path reload:$alias_reload config:$alias_config view:$alias_view tasks:$alias_tasks week:$alias_week timers:$alias_timers inbox:$alias_inbox"
+alias_default_inbox="${STACKS_ALIAS_DEFAULT_INBOX:-di}"
+alias_pin="${STACKS_ALIAS_PIN:-pin}"
+trace "3.aliases=add:$alias_add_path reload:$alias_reload config:$alias_config view:$alias_view tasks:$alias_tasks week:$alias_week timers:$alias_timers inbox:$alias_inbox default_inbox:$alias_default_inbox pin:$alias_pin"
 case "$first_word" in
   "$alias_reload"|rl|cl|reload)
     trace "4.route=reload-all(重载全部路径)"
@@ -73,6 +75,14 @@ case "$first_word" in
   "$alias_inbox"|i|inbox)
     trace "4.route=inbox(收件箱录入)"
     canonical="inbox"
+    ;;
+  "$alias_default_inbox"|di|default-inbox)
+    trace "4.route=default-inbox(默认收件箱)"
+    canonical="default-inbox"
+    ;;
+  "$alias_pin"|pin)
+    trace "4.route=pin(固定项目/看板)"
+    canonical="pin"
     ;;
   "$alias_view"|v|view|board)
     trace "4.route=view(查看看板任务)"

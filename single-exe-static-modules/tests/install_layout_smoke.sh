@@ -36,7 +36,13 @@ bash "$ROOT/tests/check_workflow_layout.sh" "$WORKFLOW"
 
 # 配置契约：八个别名、短键哨兵、完成/归档开关、Logging、两个反馈节点。
 plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |
-  jq -e '([.[] | select(.variable | startswith("STACKS_ALIAS_"))] | length) == 8' >/dev/null
+  jq -e '([.[] | select(.variable | startswith("STACKS_ALIAS_"))] | length) == 10' >/dev/null
+plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |
+  jq -e 'any(.variable == "STACKS_ALIAS_DEFAULT_INBOX" and .config.default == "di")' >/dev/null
+plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |
+  jq -e 'any(.variable == "STACKS_ALIAS_PIN" and .config.default == "pin")' >/dev/null
+plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |
+  jq -e 'any(.variable == "STACKS_CALENDAR_DURATION" and .config.default == "30")' >/dev/null
 plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |
   jq -e 'any(.variable == "STACKS_LOGGING" and .config.default == true)' >/dev/null
 plutil -extract userconfigurationconfig json -o - "$WORKFLOW/info.plist" |

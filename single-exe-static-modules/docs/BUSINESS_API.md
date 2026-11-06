@@ -136,6 +136,8 @@ workflow/
 `UiState.json` 不是业务索引，只保存 Alfred 展示层状态：
 
 - `handles.task/board/inbox/workspace`：`✅xxxxxxxx` 短句柄到完整主键/路径的映射；
+- `default_inbox`：唯一的默认收件箱规范化路径；
+- `pinned_boards`：固定项目/看板的稳定主键列表，只影响排序；
 
 短句柄只用于输入框和 autocomplete，避免 20 字符任务 ID、看板 ID 或 base64
 工作区路径占据可视空间。完整主键由 C++ 在 `WorkflowUI` 内解析。任务字段不
@@ -519,8 +521,8 @@ shell 适配层负责命令判定和 argv 拼装，分隔符与字段解析统�
 
 Alfred Workflow 配置提供 `STACKS_DEBUG`、`STACKS_NOTIFICATION`、
 `STACKS_SOUND`、`STACKS_LARGE_TYPE`、`STACKS_DELIMITER`、
-`STACKS_HANDLE_SENTINEL`、`STACKS_INCLUDE_DONE_ARCHIVED`，以及 8 个
-`STACKS_ALIAS_*` 命令别名。
+`STACKS_HANDLE_SENTINEL`、`STACKS_INCLUDE_DONE_ARCHIVED`，以及
+`ap/rl/cf/v/t/w/tm/i/di/pin` 对应的 10 个 `STACKS_ALIAS_*` 命令别名。
 `STACKS_HANDLE_SENTINEL` 默认为 `✅ `，决定短键 autocomplete 的尾部输入分隔
 标记；程序统一在标记后补一个空格。
 `STACKS_INCLUDE_DONE_ARCHIVED` 默认关闭，开启后项目、Inbox 和全局搜索都同时
@@ -710,7 +712,10 @@ Workspace 工作区
 | 查看/移除路径   | `s cf` → 路径 → 确认页                       | `list_workspaces`、`remove_workspace_index`  | P/S/T 移除索引；工作区文件不变                   | 必须有返回列表项；不得递归删目录          |
 | 创建项目任务    | 选择项目 → 输入五字段 → 回车                 | `TaskManager::create_task()`                 | W.backlog 头插 ID；新建 K；W.updated 刷新        | 单输入框；开始默认 today、优先级默认 low  |
 | 创建清单任务    | 选择 Stack → 输入五字段 → 回车               | `TaskManager::create_task()`                 | 对应 stack.tasks 头插 ID；新建 K；W.updated 刷新 | K.project 仍是所属项目 ID                 |
-| 创建 Inbox 任务 | `s i` → 工作区 → 输入五字段 → 回车           | `TaskManager::create_inbox_task()`           | 仅新建 K；K.project 为 inbox                     | 空输入查看任务；有输入进入创建面板        |
+| 创建 Inbox 任务 | `s i` → 工作区 → 输入五字段 → 回车           | `TaskManager::create_inbox_task()`           | 仅新建 K；K.project 为 inbox                     | 输入先按标题/描述模糊搜索；无命中进入创建面板 |
+| 设置默认收件箱  | `s di` → 确认 → `default-inbox-confirm:<ws>` | `inspect_workspace`、`list_workspaces`       | U.default_inbox 唯一路径；列表 ⭐ 标识             | 重设后 ⭐ 迁移；路径移除后默认值失效      |
+| 固定项目/看板   | `s pin` → `pin-confirm` / `pin-unconfirm`    | `list_boards`                                | U.pinned_boards 主键列表；仅优先显示 📌           | 名称自带 📌 不改写；固定多个              |
+| 非法触发词创建  | `s <unknown>` → `choose-target` → `choose-create` | `create_task` / `create_inbox_task`     | 先六行面板；聚合 ⭐ 默认收件箱 + 📌 固定看板       | 标题为空时六行面板不可回车               |
 | 查看项目和任务  | `s v`、`s t`、`s w`                          | `list_boards`、`list_tasks`、`list_week_due` | 无业务文件变化                                   | 只产生 UI 和可选日志                      |
 | 搜索任务        | `s t 关键词`                                 | `TaskManager::list_tasks(query)`             | 无                                               | 标题命中优先，描述命中其次，支持子序列    |
 | 打开任务详情    | filter `task:✅xxxxxxxx ✅`                   | `TaskManager::get_task()`                    | 无                                               | full task ID 从 U 恢复，输入框不显示明文   |
@@ -724,6 +729,7 @@ Workspace 工作区
 | 本周截止        | `s w`                                        | `list_week_due()`                            | 无                                               | 跨全部 library_paths 聚合                 |
 | 同步提醒        | action `sync:<id>:provider`                  | `ReminderSync::sync_task()`                  | 外部应用变化；Stacks 文件不变                    | 备注含 `[Stacks-ID:<id>]`                 |
 | 同步本周        | action `sync-week:provider`                  | `list_week_due()` + `sync_task()`            | 外部应用变化；Stacks 文件不变                    | 只处理本周未完成未归档项                  |
+| 新建日历日程    | action `calendar-create:<id>`                | AppleScript → Calendar.app                   | 未来 N 分钟只允许一个 Stacks2 日程              | 备注含 `[Stacks2]`；日历未安装或窗口占用不显示 |
 | 启动计时        | action `timer-start:<id>`                    | `start_timer()`                              | T.timers 新增任务项                              | 同一任务重复启动失败                      |
 | 停止计时        | action `timer-stop:<id>`                     | `stop_timer()`                               | K.timelogs 追加；T.timers 删除                   | duration >= 1；person 可为空              |
 | 归档任务        | action `archive:<id>`                        | `archive_task()`                             | K.archived、updated                              | K 文件不移动                              |

@@ -905,12 +905,13 @@ TEST(Boundary, WorkflowUiOneShotFiveFieldFormUsesDefaultsAndShortHandles) {
   EXPECT_EQ(page["items"][1]["title"], "描述：Check docs | rollback");
   EXPECT_EQ(page["items"][2]["title"],
             std::format("开始：{}", TaskManager::normalize_date("today").value()));
-  EXPECT_EQ(page["items"][3]["title"], "截止：（未设置）");
+  EXPECT_EQ(page["items"][3]["title"],
+            std::format("截止：{}", TaskManager::normalize_date("tomorrow").value()));
   EXPECT_EQ(page["items"][4]["title"], "优先级：low");
   EXPECT_EQ(page["items"][2]["subtitle"],
             "Default: today · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD");
   EXPECT_EQ(page["items"][3]["subtitle"],
-            "Default: unset · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD");
+            "Default: tomorrow · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD");
   EXPECT_EQ(page["items"][4]["subtitle"], "Default: low · Allowed: low, medium, high, critical");
   EXPECT_EQ(page["items"][5]["title"], "回车创建任务 / Create task");
 
@@ -1095,6 +1096,600 @@ TEST(Boundary, WorkflowUiInboxOpensTasksAndUsesOneShotCreateForm) {
   EXPECT_EQ(page["items"][1]["title"], "描述：full description");
   EXPECT_EQ(page["items"][5]["title"], "回车创建任务 / Create task");
   EXPECT_TRUE(page["items"][5]["arg"].get<std::string>().starts_with("create-preview:inbox:"));
+}
+
+/// 验证 Inbox 任务页复用 `s t` 的标题/描述模糊搜索；无命中时自动切换为创建面板。
+TEST(Boundary, WorkflowUiInboxFuzzySearchesThenFallsBackToCreateForm) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  const auto create_inbox = [&](std::string title, std::string description) {
+    const auto created = TaskManager::create_inbox_task(
+        TaskManager::TaskInput{.title = TaskManager::TaskTitle(std::move(title)),
+                               .description = TaskManager::TaskDescription(std::move(description)),
+                               .start_date = std::nullopt,
+                               .due_date = std::nullopt,
+                               .priority = "low"},
+        fixture.create_options);
+    EXPECT_TRUE(created.has_value()) << TaskManager::task_error_message(created.error());
+    return created;
+  };
+  ASSERT_TRUE(create_inbox("Groceries for party", "buy snacks"));
+  ASSERT_TRUE(create_inbox("Weekly review", "pay electric bill"));
+
+  const json inbox = json::parse(WorkflowUI::filter(context, "inbox"));
+  std::string inbox_query;
+  for (const auto& entry : inbox["items"]) {
+    if (entry.contains("autocomplete")) {
+      const std::string autocomplete = entry["autocomplete"].get<std::string>();
+      if (autocomplete.starts_with("inbox:✅")) {
+        inbox_query = autocomplete;
+        break;
+      }
+    }
+  }
+  ASSERT_FALSE(inbox_query.empty());
+
+  const auto task_titles = [](const json& feedback) {
+    std::set<std::string> titles;
+    for (const auto& entry : feedback["items"]) {
+      if (entry.contains("autocomplete") &&
+          entry["autocomplete"].get<std::string>().starts_with("task:✅")) {
+        titles.insert(entry.value("title", ""));
+      }
+    }
+    return titles;
+  };
+  const auto has_create_row = [](const json& feedback) {
+    for (const auto& entry : feedback["items"]) {
+      if (entry.value("arg", "").starts_with("create-preview:inbox:")) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // 标题命中：直接展示任务列表，不切换创建面板。
+  const json title_match =
+      json::parse(WorkflowUI::filter(context, std::format("{}grocer", inbox_query)));
+  EXPECT_NE(task_titles(title_match).find("任务｜○ Groceries for party"),
+            task_titles(title_match).end());
+  EXPECT_FALSE(has_create_row(title_match));
+
+  // 描述命中：沿用标题优先、描述其次的排序接口。
+  const json description_match =
+      json::parse(WorkflowUI::filter(context, std::format("{}electric", inbox_query)));
+  EXPECT_NE(task_titles(description_match).find("任务｜○ Weekly review"),
+            task_titles(description_match).end());
+  EXPECT_FALSE(has_create_row(description_match));
+
+  // 无命中：回退到六行创建面板，用户输入的关键词成为标题。
+  const json fallback =
+      json::parse(WorkflowUI::filter(context, std::format("{}no-such-inbox-task", inbox_query)));
+  ASSERT_EQ(fallback["items"].size(), 6U);
+  EXPECT_EQ(fallback["items"][0]["title"], "标题：no-such-inbox-task");
+  EXPECT_EQ(fallback["items"][5]["title"], "回车创建任务 / Create task");
+  EXPECT_TRUE(has_create_row(fallback));
+}
+
+/// 验证 `s di` 设置/重设默认收件箱：⭐ 只标记最新默认，工作区移除后失效。
+TEST(Boundary, WorkflowUiDefaultInboxSetResetAndClearedOnRemoval) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  const auto di_autocomplete = [&](std::string_view filename) {
+    const json page = json::parse(WorkflowUI::filter(context, "di"));
+    for (const auto& entry : page["items"]) {
+      if (entry.contains("autocomplete") &&
+          entry["autocomplete"].get<std::string>().starts_with("default-inbox:✅") &&
+          entry.value("title", "").find(filename) != std::string::npos) {
+        return entry["autocomplete"].get<std::string>();
+      }
+    }
+    return std::string{};
+  };
+  const auto confirm_action = [&](const std::string& autocomplete) {
+    const json confirm = json::parse(WorkflowUI::filter(context, autocomplete));
+    for (const auto& entry : confirm["items"]) {
+      if (entry.contains("arg") &&
+          entry["arg"].get<std::string>().starts_with("default-inbox-confirm:")) {
+        return entry["arg"].get<std::string>();
+      }
+    }
+    return std::string{};
+  };
+  const auto star_titles = [&]() {
+    std::set<std::string> titles;
+    for (const auto& entry : json::parse(WorkflowUI::filter(context, "di"))["items"]) {
+      if (entry.value("title", "").ends_with("⭐")) {
+        titles.insert(entry["title"].get<std::string>());
+      }
+    }
+    return titles;
+  };
+
+  const std::string library_a_autocomplete = di_autocomplete("library-a");
+  ASSERT_FALSE(library_a_autocomplete.empty());
+  const auto set_a = WorkflowUI::action(context, confirm_action(library_a_autocomplete));
+  ASSERT_TRUE(set_a.has_value()) << set_a.error();
+  const auto stars_after_a = star_titles();
+  EXPECT_EQ(stars_after_a.size(), 1U);
+  EXPECT_NE(stars_after_a.find("收件箱路径｜library-a ⭐"), stars_after_a.end());
+
+  // 第二个工作区加入索引后设为默认：⭐ 迁移，且始终只有一个默认收件箱。
+  const fs::path library_b = fixture.dir.root() / "library-b";
+  create_valid_workspace(library_b);
+  write_json(library_b / "p2.project", {{"id", "p2"},
+                                        {"title", "Project Two"},
+                                        {"backlog", json::array()},
+                                        {"stacks", json::array()}});
+  const auto sync_b = ProjectSync::sync_all(library_b, {fixture.project_db, fixture.stack_db});
+  ASSERT_TRUE(sync_b.has_value()) << ProjectSync::sync_error_message(sync_b.error());
+
+  const std::string library_b_autocomplete = di_autocomplete("library-b");
+  ASSERT_FALSE(library_b_autocomplete.empty());
+  const auto set_b = WorkflowUI::action(context, confirm_action(library_b_autocomplete));
+  ASSERT_TRUE(set_b.has_value()) << set_b.error();
+  const auto stars_after_b = star_titles();
+  EXPECT_EQ(stars_after_b.size(), 1U);
+  EXPECT_NE(stars_after_b.find("收件箱路径｜library-b ⭐"), stars_after_b.end());
+  EXPECT_EQ(stars_after_b.find("收件箱路径｜library-a ⭐"), stars_after_b.end());
+
+  // 移除默认收件箱所在工作区的索引：⭐ 不再出现在任何列表中。
+  const auto removed = ProjectSync::remove_workspace_index(
+      library_b, {fixture.project_db, fixture.stack_db, fixture.timer_db,
+                  fixture.timer_db.parent_path() / ".stacks-tools.lock"});
+  ASSERT_TRUE(removed.has_value()) << ProjectSync::sync_error_message(removed.error());
+  EXPECT_TRUE(star_titles().empty());
+}
+
+/// 验证 `s pin` 固定/取消固定与优先显示，标题自带 📌 不被误判或改写。
+TEST(Boundary, WorkflowUiPinBoardsPriorityAndLiteralPinTitleSafety) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  const auto pin_autocomplete = [&](std::string_view needle) {
+    const json page = json::parse(WorkflowUI::filter(context, "pin"));
+    for (const auto& entry : page["items"]) {
+      if (entry.contains("autocomplete") &&
+          entry["autocomplete"].get<std::string>().starts_with("pin:✅") &&
+          entry.value("title", "").find(needle) != std::string::npos) {
+        return entry["autocomplete"].get<std::string>();
+      }
+    }
+    return std::string{};
+  };
+  const auto confirm_arg = [&](const std::string& autocomplete, std::string_view command) {
+    const json confirm = json::parse(WorkflowUI::filter(context, autocomplete));
+    for (const auto& entry : confirm["items"]) {
+      if (entry.contains("arg") &&
+          entry["arg"].get<std::string>().starts_with(std::format("{}:", command))) {
+        return entry["arg"].get<std::string>();
+      }
+    }
+    return std::string{};
+  };
+
+  const std::string stack_one = pin_autocomplete("Stack One");
+  ASSERT_FALSE(stack_one.empty());
+  const auto pinned = WorkflowUI::action(context, confirm_arg(stack_one, "pin-confirm"));
+  ASSERT_TRUE(pinned.has_value()) << pinned.error();
+  EXPECT_NE(pinned->find("📌"), std::string::npos);
+
+  json pin_page = json::parse(WorkflowUI::filter(context, "pin"));
+  std::size_t stack_one_index = pin_page["items"].size();
+  std::size_t stack_two_index = pin_page["items"].size();
+  for (std::size_t index = 0; index < pin_page["items"].size(); ++index) {
+    const std::string title = pin_page["items"][index].value("title", "");
+    if (title.find("Stack One") != std::string::npos) {
+      stack_one_index = index;
+    }
+    if (title.find("Stack Two") != std::string::npos) {
+      stack_two_index = index;
+    }
+  }
+  EXPECT_LT(stack_one_index, stack_two_index);
+  EXPECT_NE(pin_page["items"][stack_one_index].value("title", "").find("📌"), std::string::npos);
+
+  // 业务名称本身含 📌：固定再取消后名称保持不变，不被当作状态标记改写。
+  write_json(fixture.stack_db, {{"nodes", json::array({
+                                              {{"id", "p1"},
+                                               {"projectid", "p1"},
+                                               {"title", "Project One"},
+                                               {"kind", "project"},
+                                               {"project_path", fixture.project_file.string()},
+                                               {"library_path", fixture.library.string()}},
+                                              {{"id", "s1"},
+                                               {"projectid", "p1"},
+                                               {"title", "Stack One"},
+                                               {"kind", "stack"},
+                                               {"project_path", fixture.project_file.string()},
+                                               {"library_path", fixture.library.string()}},
+                                              {{"id", "s2"},
+                                               {"projectid", "p1"},
+                                               {"title", "📌 Stack Two"},
+                                               {"kind", "stack"},
+                                               {"project_path", fixture.project_file.string()},
+                                               {"library_path", fixture.library.string()}},
+                                          })}});
+  write_json(fixture.project_file,
+             {
+                 {"id", "p1"},
+                 {"title", "Project One"},
+                 {"backlog", json::array()},
+                 {"stacks", json::array({
+                                {{"id", "s1"}, {"title", "Stack One"}, {"tasks", json::array()}},
+                                {{"id", "s2"}, {"title", "📌 Stack Two"}, {"tasks", json::array()}},
+                            })},
+                 {"updated", "2026-11-01 00:00:00"},
+             });
+
+  const std::string literal_pin = pin_autocomplete("📌 Stack Two");
+  ASSERT_FALSE(literal_pin.empty());
+  const auto pin_literal = WorkflowUI::action(context, confirm_arg(literal_pin, "pin-confirm"));
+  ASSERT_TRUE(pin_literal.has_value()) << pin_literal.error();
+  const auto unpin_literal = WorkflowUI::action(context, confirm_arg(literal_pin, "pin-unconfirm"));
+  ASSERT_TRUE(unpin_literal.has_value()) << unpin_literal.error();
+
+  const auto boards = TaskManager::list_boards(fixture.databases);
+  ASSERT_TRUE(boards.has_value());
+  const auto literal_board = std::ranges::find_if(
+      *boards, [](const TaskManager::BoardTarget& board) { return board.id == "s2"; });
+  ASSERT_NE(literal_board, boards->end());
+  EXPECT_EQ(literal_board->title, "📌 Stack Two");
+}
+
+/// 验证非法触发词先进入六行创建面板，回车后聚合默认收件箱与固定项目/看板并创建任务。
+TEST(Boundary, WorkflowUiInvalidTriggerAggregatedCreateFlow) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  // 设置默认收件箱。
+  const json di_page = json::parse(WorkflowUI::filter(context, "di"));
+  std::string di_action;
+  for (const auto& entry : di_page["items"]) {
+    if (entry.contains("autocomplete") &&
+        entry["autocomplete"].get<std::string>().starts_with("default-inbox:✅")) {
+      const json confirm =
+          json::parse(WorkflowUI::filter(context, entry["autocomplete"].get<std::string>()));
+      for (const auto& row : confirm["items"]) {
+        if (row.contains("arg") &&
+            row["arg"].get<std::string>().starts_with("default-inbox-confirm:")) {
+          di_action = row["arg"].get<std::string>();
+        }
+      }
+    }
+  }
+  ASSERT_FALSE(di_action.empty());
+  ASSERT_TRUE(WorkflowUI::action(context, di_action).has_value());
+
+  // 固定 Stack One。
+  const json pin_page = json::parse(WorkflowUI::filter(context, "pin"));
+  std::string pin_action;
+  for (const auto& entry : pin_page["items"]) {
+    if (entry.contains("autocomplete") &&
+        entry["autocomplete"].get<std::string>().starts_with("pin:✅") &&
+        entry.value("title", "").find("Stack One") != std::string::npos) {
+      const json confirm =
+          json::parse(WorkflowUI::filter(context, entry["autocomplete"].get<std::string>()));
+      for (const auto& row : confirm["items"]) {
+        if (row.contains("arg") && row["arg"].get<std::string>().starts_with("pin-confirm:")) {
+          pin_action = row["arg"].get<std::string>();
+        }
+      }
+    }
+  }
+  ASSERT_FALSE(pin_action.empty());
+  ASSERT_TRUE(WorkflowUI::action(context, pin_action).has_value());
+
+  // 非法触发词：六行创建面板，回车进入聚合目标列表。
+  const json form = json::parse(WorkflowUI::filter(context, "unknown-trigger"));
+  ASSERT_EQ(form["items"].size(), 6U);
+  EXPECT_EQ(form["items"][0]["title"], "标题：unknown-trigger");
+  for (const auto& entry : form["items"]) {
+    EXPECT_TRUE(entry.contains("autocomplete"));
+    EXPECT_TRUE(entry["autocomplete"].get<std::string>().starts_with("choose-target:"));
+    EXPECT_FALSE(entry.value("valid", true));
+    EXPECT_FALSE(entry.contains("arg"));
+  }
+  const std::string payload = form["items"][5]["autocomplete"].get<std::string>().substr(
+      std::string("choose-target:").size());
+
+  const json targets =
+      json::parse(WorkflowUI::filter(context, std::format("choose-target:{}", payload)));
+  std::string inbox_create;
+  std::string board_create;
+  for (const auto& entry : targets["items"]) {
+    const std::string arg = entry.value("arg", "");
+    if (arg.starts_with("choose-create:inbox:")) {
+      inbox_create = arg;
+    }
+    if (arg.starts_with("choose-create:board:")) {
+      board_create = arg;
+    }
+  }
+  ASSERT_FALSE(inbox_create.empty());
+  ASSERT_FALSE(board_create.empty());
+  EXPECT_EQ(targets["items"][0].value("title", ""), "收件箱｜⭐ library-a");
+
+  const auto inbox_created = WorkflowUI::action(context, inbox_create);
+  ASSERT_TRUE(inbox_created.has_value()) << inbox_created.error();
+  const auto board_created = WorkflowUI::action(context, board_create);
+  ASSERT_TRUE(board_created.has_value()) << board_created.error();
+
+  const auto inbox_tasks =
+      TaskManager::list_tasks(fixture.databases, TaskManager::TaskListOptions{
+                                                     .target = TaskManager::TargetId("inbox"),
+                                                     .query = "",
+                                                     .include_done = true,
+                                                     .include_archived = false,
+                                                 });
+  ASSERT_TRUE(inbox_tasks.has_value());
+  EXPECT_TRUE(std::ranges::any_of(*inbox_tasks, [](const TaskManager::TaskRecord& task) {
+    return task.title == "unknown-trigger";
+  }));
+  const auto stack_tasks =
+      TaskManager::list_tasks(fixture.databases, TaskManager::TaskListOptions{
+                                                     .target = TaskManager::TargetId("s1"),
+                                                     .query = "",
+                                                     .include_done = true,
+                                                     .include_archived = false,
+                                                 });
+  ASSERT_TRUE(stack_tasks.has_value());
+  EXPECT_TRUE(std::ranges::any_of(*stack_tasks, [](const TaskManager::TaskRecord& task) {
+    return task.title == "unknown-trigger";
+  }));
+}
+
+/// 验证没有默认收件箱也没有固定看板时，聚合页提示用户并读取 Alfred 配置的触发词别名。
+TEST(Boundary, WorkflowUiInvalidTriggerGuidesWithConfiguredAliases) {
+  ScopedEnvironmentVariable default_alias("STACKS_ALIAS_DEFAULT_INBOX", "default-box");
+  ScopedEnvironmentVariable pin_alias("STACKS_ALIAS_PIN", "star-board");
+  ScopedEnvironmentVariable inbox_alias("STACKS_ALIAS_INBOX", "in");
+  ScopedEnvironmentVariable view_alias("STACKS_ALIAS_VIEW", "board-view");
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  const json form = json::parse(WorkflowUI::filter(context, "draft task"));
+  const std::string payload = form["items"][5]["autocomplete"].get<std::string>().substr(
+      std::string("choose-target:").size());
+  const json targets =
+      json::parse(WorkflowUI::filter(context, std::format("choose-target:{}", payload)));
+  bool has_guide = false;
+  for (const auto& entry : targets["items"]) {
+    const std::string subtitle = entry.value("subtitle", "");
+    if (entry.value("title", "").find("请先维护创建目标") != std::string::npos) {
+      has_guide = true;
+      EXPECT_NE(subtitle.find("default-box"), std::string::npos);
+      EXPECT_NE(subtitle.find("star-board"), std::string::npos);
+      EXPECT_NE(subtitle.find("in"), std::string::npos);
+      EXPECT_NE(subtitle.find("board-view"), std::string::npos);
+    }
+  }
+  EXPECT_TRUE(has_guide);
+  EXPECT_TRUE(targets["items"].back().value("title", "").starts_with("← 返回上一级"));
+}
+
+/// 验证创建语法默认值与优先级自动归类：截止默认明天、第二段枚举词归入优先级。
+TEST(Boundary, WorkflowUiCreateDefaultsAndPriorityAutoMatch) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+
+  const auto create_and_get = [&](std::string payload) -> std::expected<std::string, std::string> {
+    const json form = json::parse(WorkflowUI::filter(context, std::format("add:p1 {}", payload)));
+    if (form["items"].size() != 6U) {
+      return std::unexpected("unexpected create form size");
+    }
+    const auto created = WorkflowUI::action(context, form["items"][5]["arg"].get<std::string>());
+    EXPECT_TRUE(created.has_value()) << created.error();
+    return created;
+  };
+
+  // 仅标题：开始=今天、截止=明天、优先级=low。
+  const auto only_title = create_and_get("Only title");
+  ASSERT_TRUE(only_title.has_value());
+  const auto tasks =
+      TaskManager::list_tasks(fixture.databases, TaskManager::TaskListOptions{
+                                                     .target = TaskManager::TargetId("p1"),
+                                                     .query = "Only title",
+                                                     .include_done = true,
+                                                     .include_archived = false,
+                                                 });
+  ASSERT_TRUE(tasks.has_value());
+  ASSERT_EQ(tasks->size(), 1U);
+  EXPECT_EQ(tasks->front().start_date, TaskManager::normalize_date("today").value());
+  EXPECT_EQ(tasks->front().due_date, TaskManager::normalize_date("tomorrow").value());
+  EXPECT_EQ(tasks->front().priority, "low");
+
+  // 简单语法 `标题|high`：第二段枚举词自动进入优先级，描述保持为空。
+  const json priority_form = json::parse(WorkflowUI::filter(context, "add:p1 Fast task|high"));
+  EXPECT_EQ(priority_form["items"][1]["title"], "描述：（可空）");
+  EXPECT_EQ(priority_form["items"][4]["title"], "优先级：high");
+
+  // 完整语法四个分隔符：title|desc|today|today|high。
+  const json full_form =
+      json::parse(WorkflowUI::filter(context, "add:p1 Full|notes|today|tomorrow|medium"));
+  EXPECT_EQ(full_form["items"][0]["title"], "标题：Full");
+  EXPECT_EQ(full_form["items"][1]["title"], "描述：notes");
+  EXPECT_EQ(full_form["items"][2]["title"], "开始：today");
+  EXPECT_EQ(full_form["items"][3]["title"], "截止：tomorrow");
+  EXPECT_EQ(full_form["items"][4]["title"], "优先级：medium");
+}
+
+/// 验证日历日程入口只在“已安装 + 窗口空闲”时出现，占用时 action 直接拒绝。
+TEST(Boundary, WorkflowUiCalendarEventRowVisibilityAndOccupiedWindow) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+  const auto created = fixture.create("s1", "Calendar task", "", "tomorrow");
+  const std::string detail_query = std::format("task:{}", created.task_id.value);
+
+  const auto has_calendar_action = [&](const json& page) {
+    for (const auto& entry : page["items"]) {
+      if (entry.value("arg", "").starts_with("calendar-create:")) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  {
+    ScopedEnvironmentVariable window("STACKS_CALENDAR_TEST_WINDOW", "occupied");
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    EXPECT_FALSE(has_calendar_action(detail));
+    const auto rejected =
+        WorkflowUI::action(context, std::format("calendar-create:{}", created.task_id.value));
+    ASSERT_FALSE(rejected.has_value());
+    EXPECT_NE(rejected.error().find("已存在"), std::string::npos);
+  }
+  {
+    ScopedEnvironmentVariable window("STACKS_CALENDAR_TEST_WINDOW", "free");
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    EXPECT_TRUE(has_calendar_action(detail));
+  }
+  {
+    ScopedEnvironmentVariable hide("STACKS_TEST_HIDE_CALENDAR", "1");
+    ScopedEnvironmentVariable window("STACKS_CALENDAR_TEST_WINDOW", "free");
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    EXPECT_FALSE(has_calendar_action(detail));
+  }
+  // 无 osascript 探测：仅读 Timers.json 中最近一次成功插入日期时间判断窗口。
+  {
+    write_json(fixture.timer_db,
+               {{"timers", json::object()}, {"last_calendar_insert", "2099-01-01 00:00:00"}});
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    EXPECT_FALSE(has_calendar_action(detail));
+  }
+  {
+    write_json(fixture.timer_db,
+               {{"timers", json::object()}, {"last_calendar_insert", "2000-01-01 00:00:00"}});
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    EXPECT_TRUE(has_calendar_action(detail));
+  }
+}
+
+/// 验证提醒/OmniFocus 同步入口按安装状态显示，未安装的 action 直接拒绝。
+TEST(Boundary, WorkflowUiSyncRowsRespectInstalledApps) {
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+  const auto created = fixture.create("s1", "Sync guard task", "", "tomorrow");
+  const std::string detail_query = std::format("task:{}", created.task_id.value);
+
+  {
+    ScopedEnvironmentVariable hide_omnifocus("STACKS_TEST_HIDE_OMNIFOCUS", "1");
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    bool has_omnifocus = false;
+    bool has_both = false;
+    for (const auto& entry : detail["items"]) {
+      const std::string arg = entry.value("arg", "");
+      has_omnifocus = has_omnifocus || (arg.starts_with("sync:") && arg.ends_with(":omnifocus"));
+      has_both = has_both || (arg.starts_with("sync:") && arg.ends_with(":both"));
+    }
+    EXPECT_FALSE(has_omnifocus);
+    EXPECT_FALSE(has_both);
+    const auto rejected =
+        WorkflowUI::action(context, std::format("sync:{}:omnifocus", created.task_id.value));
+    ASSERT_FALSE(rejected.has_value());
+    EXPECT_NE(rejected.error().find("未安装"), std::string::npos);
+  }
+  {
+    ScopedEnvironmentVariable hide_omnifocus("STACKS_TEST_HIDE_OMNIFOCUS", "1");
+    ScopedEnvironmentVariable hide_reminders("STACKS_TEST_HIDE_REMINDERS", "1");
+    const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+    bool has_sync_arg = false;
+    for (const auto& entry : detail["items"]) {
+      if (entry.value("arg", "").starts_with("sync:")) {
+        has_sync_arg = true;
+      }
+    }
+    EXPECT_FALSE(has_sync_arg);
+  }
+}
+
+/// 验证详情页操作顺序（日历 → OmniFocus → 修改标题）与两行编辑页（原值 + 新值）。
+TEST(Boundary, WorkflowUiDetailOrderingAndTwoRowEditPages) {
+  ScopedEnvironmentVariable window("STACKS_CALENDAR_TEST_WINDOW", "free");
+  Fixture fixture;
+  const WorkflowUI::Context context{
+      .workflow_dir = fixture.dir.root(),
+      .databases = fixture.databases,
+      .inbox_library = fixture.library,
+  };
+  const auto created = fixture.create("s1", "Original title", "Original notes", "tomorrow");
+  const std::string detail_query = std::format("task:{}", created.task_id.value);
+  const json detail = json::parse(WorkflowUI::filter(context, detail_query));
+
+  EXPECT_TRUE(detail["items"][0].value("arg", "").starts_with("calendar-create:"));
+  EXPECT_TRUE(detail["items"][1].value("arg", "").starts_with("sync:") &&
+              detail["items"][1].value("arg", "").ends_with(":omnifocus"));
+  EXPECT_EQ(detail["items"][2].value("title", ""), "修改标题");
+
+  // 编辑标题：第一行原值，第二行待更新值；输入后第二行变成可执行更改。
+  const std::string task_handle = std::format("task:{}", created.task_id.value);
+  std::string rename_query;
+  for (const auto& entry : detail["items"]) {
+    if (entry.value("autocomplete", "").starts_with("rename:")) {
+      rename_query = entry["autocomplete"].get<std::string>();
+      break;
+    }
+  }
+  ASSERT_FALSE(rename_query.empty());
+  const json rename_page = json::parse(WorkflowUI::filter(context, rename_query));
+  ASSERT_GE(rename_page["items"].size(), 2U);
+  EXPECT_EQ(rename_page["items"][0].value("title", ""), "新标题：（继续输入）");
+  EXPECT_EQ(rename_page["items"][1].value("title", ""), "原标题：Original title");
+  EXPECT_FALSE(rename_page["items"][0].value("valid", true));
+
+  const json rename_typed =
+      json::parse(WorkflowUI::filter(context, std::format("{}New name", rename_query)));
+  EXPECT_EQ(rename_typed["items"][0].value("title", ""), "新标题：New name");
+  EXPECT_EQ(rename_typed["items"][1].value("title", ""), "原标题：Original title");
+  EXPECT_TRUE(rename_typed["items"][0].value("valid", false));
+  EXPECT_TRUE(rename_typed["items"][0].value("arg", "").starts_with("rename:"));
+
+  // 描述编辑页保留完整原值供参考，无需复制粘贴。
+  std::string desc_query;
+  for (const auto& entry : detail["items"]) {
+    if (entry.value("autocomplete", "").starts_with("desc:")) {
+      desc_query = entry["autocomplete"].get<std::string>();
+      break;
+    }
+  }
+  ASSERT_FALSE(desc_query.empty());
+  const json desc_page = json::parse(WorkflowUI::filter(context, desc_query));
+  EXPECT_EQ(desc_page["items"][0].value("title", ""), "新描述：（继续输入）");
+  EXPECT_EQ(desc_page["items"][1].value("title", ""), "原描述：Original notes");
 }
 
 /// 验证短键尾部哨兵可由 Alfred 环境变量替换，删除哨兵后仍可继续输入。

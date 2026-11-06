@@ -645,6 +645,69 @@ Debug 会把完整调用链写入 Alfred Debugger 与 log/trace-YYYYMMDD.log。
 			<key>config</key>
 			<dict>
 				<key>default</key>
+				<string>di</string>
+				<key>placeholder</key>
+				<string>di</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>默认收件箱的 Alfred 别名。Command alias for the default Inbox.</string>
+			<key>label</key>
+			<string>默认收件箱别名 / Default-inbox alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_DEFAULT_INBOX</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>pin</string>
+				<key>placeholder</key>
+				<string>pin</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>固定常用项目/看板的 Alfred 别名。Command alias for pinning boards.</string>
+			<key>label</key>
+			<string>固定别名 / Pin alias</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_ALIAS_PIN</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>30</string>
+				<key>placeholder</key>
+				<string>30</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>新建日历日程的独占时长（分钟）。Calendar event duration in minutes; one Stacks2 event per window.</string>
+			<key>label</key>
+			<string>日历日程时长 / Calendar duration</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>STACKS_CALENDAR_DURATION</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
 				<true/>
 				<key>required</key>
 				<false/>
