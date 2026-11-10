@@ -237,9 +237,9 @@ HTML_HEAD
   <footer>
     文档由 Doxygen 与 clang-doc 自动生成。
     <a href="https://github.com/SuchaharCan/CXX-CMake-template">查看模板源码</a>。
-    <p class="lead">sc-cmake ： https://codeberg.org/SuzhaharCan/sc-cmake</p>
-    <p class="lead">brew tap SuzhaharCan/sc-cmake https://codeberg.org/SuzhaharCan/sc-cmake
-    brew install sc-cmake。</p>
+    <a href="https://codeberg.org/SuzhaharCan/sc-cmake">sc-cmake 本地拉取应用上述模板或你个人仓库内模板的工具</a>。
+    <p class="lead">brew tap SuzhaharCan/sc-cmake https://codeberg.org/SuzhaharCan/sc-cmake</p>
+    <p class="lead">brew install sc-cmake。</p>
   </footer>
 </body>
 </html>
