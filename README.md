@@ -2,10 +2,16 @@
 
 多模板 CMake 工程集合。每个模板目录自成一体，包含 `justfile`，可用 just 直接构建。
 
-| 模板                 | 说明                                                               |
-| -------------------- | ------------------------------------------------------------------ |
-| `single-exe-classic` | 经典 `.hxx/.cxx` 单可执行（cmake/ 分层 + grc 着色 + bqlog）        |
-| `single-exe-modules` | C++23 模块单可执行（`import std` + 自研模块 + CMake 原生模块扫描） |
+```bash
+# 个人自用的 CMake C++项目模板拉取小工具
+brew tap SuzhaharCan/sc-cmake https://codeberg.org/SuzhaharCan/sc-cmake
+brew install sc-cmake
+```
+
+| 模板                        | 说明                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `single-exe-classic`        | 经典 `.hxx/.cxx` 单可执行（cmake/ 分层 + grc 着色 + bqlog）                                       |
+| `single-exe-modules`        | C++23 模块单可执行（`import std` + 自研模块 + CMake 原生模块扫描）                                |
 | `single-exe-static-modules` | `Omni-Stacks` 实际应用：多独立 STATIC 模块 + 单 main（bqlog、Alfred、完整边界/变异/真实数据测试） |
 
 ## 在线 API 文档
@@ -51,12 +57,12 @@ URL 兼容契约固定如下，不能被 clang-doc 接入破坏：
 
 ### 路径与职责
 
-| 变量 | 路径 | 用途 |
-| --- | --- | --- |
-| `PROJECT_ROOT` | `${home}/00CMake-Template` | 源码、Dockerfile、编译产物 |
-| `IMAGE_HOME` | `${home}/00Docker_Containers/cmake_template_builder` | 镜像 tar 归档 |
-| `IMAGE_REF` | `local/cmake-template-ubuntu24:latest` | Apple container 本地镜像名 |
-| `IMAGE_ARCHIVE` | `$IMAGE_HOME/cmake-template-ubuntu24.tar` | 可恢复的镜像归档文件 |
+| 变量            | 路径                                                 | 用途                       |
+| --------------- | ---------------------------------------------------- | -------------------------- |
+| `PROJECT_ROOT`  | `${home}/00CMake-Template`                           | 源码、Dockerfile、编译产物 |
+| `IMAGE_HOME`    | `${home}/00Docker_Containers/cmake_template_builder` | 镜像 tar 归档              |
+| `IMAGE_REF`     | `local/cmake-template-ubuntu24:latest`               | Apple container 本地镜像名 |
+| `IMAGE_ARCHIVE` | `$IMAGE_HOME/cmake-template-ubuntu24.tar`            | 可恢复的镜像归档文件       |
 
 Apple container 的实际镜像库由 container 服务统一维护，不能直接指定到
 `IMAGE_HOME`。`IMAGE_HOME` 只保存通过 `container image save` 导出的镜像归档；
@@ -90,11 +96,11 @@ Dockerfile 中的 `docker.io/...` 或 Apple 内置的 `ghcr.io/...`。
 
 当前环境需要预拉取三类镜像：
 
-| 来源 | 官方引用 | 国内代理 |
-| --- | --- | --- |
+| 来源         | 官方引用                                              | 国内代理                                                      |
+| ------------ | ----------------------------------------------------- | ------------------------------------------------------------- |
 | GHCR Builder | `ghcr.io/apple/container-builder-shim/builder:0.13.2` | `ghcr.nju.edu.cn/apple/container-builder-shim/builder:0.13.2` |
-| GHCR vminit | `ghcr.io/apple/containerization/vminit:0.53.0` | `ghcr.nju.edu.cn/apple/containerization/vminit:0.53.0` |
-| Docker Hub | `docker.io/library/ubuntu:24.04` | `docker.m.daocloud.io/library/ubuntu:24.04` |
+| GHCR vminit  | `ghcr.io/apple/containerization/vminit:0.53.0`        | `ghcr.nju.edu.cn/apple/containerization/vminit:0.53.0`        |
+| Docker Hub   | `docker.io/library/ubuntu:24.04`                      | `docker.m.daocloud.io/library/ubuntu:24.04`                   |
 
 #### 2.1 加速 builder 和 vminit
 
