@@ -196,7 +196,7 @@ runs-on: [self-hosted, macos-27]
   - macOS：`clang++ + libc++`（Homebrew 依赖 ABI 固定；g++ 需自建 libstdc++ 依赖）
   - Linux：`g++ + libstdc++` → `clang++ + libc++`
   - modules 模板固定 `clang++ + libc++`；GCC 不支持 `-stdlib=libc++`。
-- macOS：Homebrew 安装/升级 cmake≥4.5.0、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、graphviz、bqlog。
+- macOS：Homebrew 安装/升级 cmake≥4.5.0（索引过旧无 4.5.0 bottle 时回退安装 Kitware 官方二进制）、clang≥23.1、ninja、just、grc、ccache、spdlog/fmt/gtest/benchmark、doxygen、graphviz、bqlog。
 - `bqlog` 是可选依赖；GitHub macOS Homebrew 若没有该 formula，会 warning 并跳过，不会让流水线失败。
 - BqLog 官方安装方式为 `brew install bqlog`，同时支持 **macOS 与 Linux Homebrew**
   （Linuxbrew 默认前缀 `/home/linuxbrew/.linuxbrew`）。CI 会：

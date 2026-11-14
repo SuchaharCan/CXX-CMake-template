@@ -10,6 +10,10 @@
 set -euo pipefail
 
 CHECK_ONLY="${CI_DEPS_CHECK_ONLY:-0}"
+SUDO_PREFIX=""
+if [ "$(id -u)" -ne 0 ]; then
+  SUDO_PREFIX="sudo"
+fi
 
 if ! command -v brew >/dev/null 2>&1; then
   echo "error: Homebrew not found (https://brew.sh)" >&2
@@ -40,6 +44,15 @@ if [ "${#missing[@]}" -gt 0 ]; then
   brew install "${missing[@]}"
 fi
 
+# HOMEBREW_NO_AUTO_UPDATE 会保留跑器镜像里的旧索引；cmake 4.5.0 需要新索引。
+# 先显式刷新索引，避免 `brew upgrade cmake` 因索引过旧而空转。
+if [ "$CHECK_ONLY" = "1" ]; then
+  echo "info: CI_DEPS_CHECK_ONLY — 跳过 Homebrew 索引刷新"
+else
+  echo "refreshing Homebrew index"
+  brew update --quiet || echo "warn: brew update failed（沿用现有索引）"
+fi
+
 check_min() {
   local actual="$1" minimum="$2" label="$3"
   if [ "$(printf '%s\n%s\n' "$minimum" "$actual" | sort -V | head -1)" != "$minimum" ]; then
@@ -68,6 +81,29 @@ if [ "${#upgrade[@]}" -gt 0 ]; then
   cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
   just_ver="$(just --version | awk '{print $2}')"
   clang_ver="$(/opt/homebrew/opt/llvm/bin/clang++ --version | head -1 | sed -E 's/.* version ([0-9.]+).*/\1/')"
+fi
+
+# ---- cmake 回退：Homebrew 若仍无 4.5.0 bottle，安装 Kitware 官方二进制 ----
+cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
+if [ "$(printf '%s\n%s\n' "4.5.0" "$cmake_ver" | sort -V | head -1)" != "4.5.0" ]; then
+  if [ "$CHECK_ONLY" = "1" ]; then
+    echo "error: cmake ${cmake_ver} < 4.5.0（CHECK_ONLY 模式不安装官方二进制）" >&2
+    exit 1
+  fi
+  CMAKE_VERSION_PIN="${CMAKE_VERSION_PIN:-4.5.0}"
+  CMAKE_TARBALL="cmake-${CMAKE_VERSION_PIN}-macos-universal.tar.gz"
+  echo "installing official cmake ${CMAKE_VERSION_PIN}（Homebrew bottle 不可用）"
+  curl -fL --silent --show-error --retry 3 --retry-delay 2 \
+    -o "/tmp/${CMAKE_TARBALL}" \
+    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_PIN}/${CMAKE_TARBALL}"
+  $SUDO_PREFIX mkdir -p /opt
+  $SUDO_PREFIX tar -xzf "/tmp/${CMAKE_TARBALL}" -C /opt
+  for tool in cmake ctest cpack; do
+    $SUDO_PREFIX ln -sf "/opt/cmake-${CMAKE_VERSION_PIN}-macos-universal/CMake.app/Contents/bin/${tool}" \
+      "/usr/local/bin/${tool}"
+  done
+  hash -r
+  cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
 fi
 
 # bqlog 是可选依赖：GitHub 的 Homebrew 可能没有该 formula，不应阻断 CI
