@@ -257,7 +257,7 @@ build/docs/doxygen/html/index.html
 
 clang-doc 显式接收项目 `.cppm/.cpp` 源文件列表，同时先把 compile commands
 过滤为目标对应的正常 `.o` 条目，避开 CMake 模块扫描生成的 `.bmi` 临时项。
-构建目录中的 `std.cppm` 和 `bq.log.cppm` 不会成为直接文档输入；clang-doc 仍会
+构建目录中的标准库 BMI 与 `bq.log.cppm` 不会成为直接文档输入；clang-doc 仍会
 根据 import 关系为 `std` 等依赖生成映射页，这是工具的正常符号解析行为。
 
 LLDB 的实际操作、常用命令和三个可复现实验见项目根目录

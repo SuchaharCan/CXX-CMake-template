@@ -15,7 +15,7 @@
 
 ```text
 macOS
-CMake >= 4.4.4
+CMake >= 4.5.0
 Ninja
 Homebrew LLVM / Clang >= 23.1
 just
@@ -26,7 +26,7 @@ just
 ```text
 lldb-2103.0.34.407
 Homebrew clang version 23.1.4
-CMake 4.4.5
+CMake 4.5.0
 Ninja 1.13.2
 ```
 
@@ -692,7 +692,7 @@ WorkflowUI::filter@WorkflowUI(...)
 - 行表偶尔会在多行表达式附近前后跳动，配合 `source list` 和 `bt` 确认位置；
 - LLDB 无法显示某个 STL/模块类型时，先用 `expression` 调用方法，例如
   `id.size()`、`output.substr(0, 240)`；
-- 不把构建目录生成的 `std.cppm` 当成业务源码调试。
+- 不再把构建目录中的标准库模块 BMI 当成业务源码调试；std 由 CMake 4.5 原生构建。
 
 ## 14. 崩溃与异常排查
 

@@ -10,7 +10,7 @@
 | `00_core_modules.cmake` | core 必选 | 模块 API：cxx_add_module / cxx_add_module_consumer | compiler |
 | `00_core_color.cmake` | core 必选 | 调色板 + cxx_msg + cxx_sep/cxx_banner | 无（独立） |
 | `00_core_log.cmake` | core 必选 | log/ 文件日志 | 无（独立） |
-| `00_core_deps.cmake` | core 必选 | cmake≥4.4.4/ninja/clang≥23.1/just/spdlog/fmt/bqlog 检测 | compiler+color+log |
+| `00_core_deps.cmake` | core 必选 | cmake≥4.5.0/ninja/clang≥23.1/just/spdlog/fmt/bqlog 检测 | compiler+color+log |
 | `00_core_buildlog.cmake` | core 必选 | build tee + grc 着色 + 长命令换行 | color+log |
 | `00_core_profile.cmake` | core 必选 | Debug/Release 编译画像 | 无（独立） |
 | `00_core_lint.cmake` | core 必选 | 警告探测 + clang-tidy + clang-format（含 .cppm） | compiler+color+buildlog |

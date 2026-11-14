@@ -18,6 +18,11 @@ set(TARGET_ARCH "native" CACHE STRING "Reserved: -march for future non-default t
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
   add_compile_definitions(
     $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG>)
+  # CMake 4.5 原生 import std 的 std BMI 不继承目录级 COMPILE_DEFINITIONS；
+  # Debug 硬化宏同时写入 CMAKE_CXX_FLAGS_DEBUG，保证 std BMI 与业务模块同 ABI。
+  set(CMAKE_CXX_FLAGS_DEBUG
+      "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG"
+      CACHE STRING "Debug CXX flags" FORCE)
 endif()
 
 # -----------------------------------------------------------------------------

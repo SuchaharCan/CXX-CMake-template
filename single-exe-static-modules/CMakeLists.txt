@@ -10,11 +10,11 @@
 #   Stacks_Tools  单 main，只做单层 import 与 CLI 路由
 #
 # 约束：
-#   Ninja + CMake ≥4.4.4 + Clang++ ≥23.1 + C++26 + libc++
-#   std 模块由本机 LLVM 的 std.cppm 自编译
+#   Ninja + CMake ≥4.5.0 + Clang++ ≥23.1 + C++26 + libc++
+#   std 模块由 CMake 4.5 原生 import std 按本机架构构建
 # =============================================================================
 
-cmake_minimum_required(VERSION 4.4.4)
+cmake_minimum_required(VERSION 4.5.0)
 
 include(cmake/00_core_compiler.cmake)
 

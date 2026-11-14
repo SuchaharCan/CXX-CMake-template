@@ -11,7 +11,7 @@
 # 改 CMake / -D / 换编译器：cmake -G Ninja .. && cmake --build .
 # =============================================================================
 
-cmake_minimum_required(VERSION 4.4.4)
+cmake_minimum_required(VERSION 4.5.0)
 
 # ---- A. pre-project（无日志模块；模块模板强制 Ninja）----
 include(cmake/00_core_compiler.cmake)

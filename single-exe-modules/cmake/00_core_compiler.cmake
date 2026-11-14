@@ -3,7 +3,7 @@
 # 分层: core（必选，必须在 project() 之前 include）
 # 独立: 是 — 不依赖任何其他模板模块，仅用 CMake 内置命令
 # 下游: 00_core_deps.cmake（消费 CXX_LLVM_* / CXX_USING_*）
-#       00_core_modules.cmake（模块 API 依赖编译器；import std 由 CMake 4.4+ 原生支持）
+#       00_core_modules.cmake（模块 API 依赖编译器；import std 由 CMake 4.5 原生支持）
 #       00_core_lint.cmake（消费 CXX_LLVM_BIN 定位 clang-tidy/format）
 #       10_core_setup.cmake（编排 cxx_sanitize_linker_flags / cxx_apply_llvm_runtime）
 # 功能:
@@ -192,6 +192,31 @@ endif()
 
 set(LLVM_ROOT "${CXX_LLVM_ROOT}" CACHE PATH "Alias of CXX_LLVM_ROOT" FORCE)
 
+# ---- CMake 4.5 原生 import std：定位 libc++.modules.json ----
+# brew llvm 的元数据位于 <llvm>/lib/c++/，且 clang++ -print-file-name 在找不到时
+# 只回显文件名；CMake 无法自行发现时需要显式给出 CMAKE_CXX_STDLIB_MODULES_JSON。
+set(_cxx_stdlib_modules_json "")
+execute_process(
+  COMMAND "${_cxx_clangxx}" -print-file-name=libc++.modules.json
+  OUTPUT_VARIABLE _cxx_stdlib_modules_json OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT _cxx_stdlib_modules_json OR NOT EXISTS "${_cxx_stdlib_modules_json}")
+  set(_cxx_stdlib_modules_json "")
+  foreach(_candidate IN ITEMS
+      "${CXX_LLVM_ROOT}/lib/c++/libc++.modules.json"
+      "${CXX_LLVM_ROOT}/share/libc++/v1/libc++.modules.json"
+      "/usr/lib/llvm-23/share/libc++/v1/libc++.modules.json")
+    if(NOT _cxx_stdlib_modules_json AND EXISTS "${_candidate}")
+      set(_cxx_stdlib_modules_json "${_candidate}")
+    endif()
+  endforeach()
+endif()
+if(_cxx_stdlib_modules_json)
+  set(CMAKE_CXX_STDLIB_MODULES_JSON "${_cxx_stdlib_modules_json}"
+      CACHE FILEPATH "libc++ module metadata for CMake import std" FORCE)
+else()
+  message(WARNING "libc++.modules.json not found — import std may not build")
+endif()
+
 # ---- LLVM 工具路径自愈（brew upgrade llvm 后旧 Cellar 路径失效）----
 # CMake 在首次编译器探测时会把 clang-scan-deps / llvm-ar / llvm-ranlib
 # 缓存为 Cellar 真实路径（如 /opt/homebrew/Cellar/llvm/23.1.3_1/...）。
@@ -223,7 +248,7 @@ if(CXX_LLVM_BIN)
 endif()
 
 # ---- 平台默认 + 回退策略（模块模板固定 clang++ + libc++）----
-# 模块的 import std 使用 libc++ 的 std.cppm；Ubuntu GCC 13 无 std 模块。
+# 模块的 import std 由 CMake 4.5 + Ninja 原生处理；模板固定 clang++ + libc++。
 set(CXX_REQUIRE_STD_MODULE ON CACHE INTERNAL "modules require libc++ std module")
 if(CXX_PREFERRED_COMPILER STREQUAL "auto")
   set(CXX_PREFERRED_COMPILER "clang++" CACHE STRING "" FORCE)
@@ -235,7 +260,7 @@ if(_CXX_CLANG_PROGRAM OR EXISTS "${_cxx_clangxx}")
 endif()
 if(NOT _cxx_clang_available)
   message(FATAL_ERROR
-    "single-exe-modules requires clang++ (import std via libc++ std.cppm). "
+    "single-exe-modules requires clang++ (import std via libc++). "
     "Install llvm or set -DCXX_PREFERRED_COMPILER=clang++.")
 endif()
 if(CXX_PREFERRED_COMPILER STREQUAL "g++")
@@ -303,7 +328,7 @@ endif()
 set(CXX_USING_CLANG "${CXX_USING_CLANG}" CACHE BOOL "Active toolchain is Clang" FORCE)
 set(CXX_USING_GCC "${CXX_USING_GCC}" CACHE BOOL "Active toolchain is GCC" FORCE)
 
-# 模块模板固定 libc++（import std 使用 libc++ 的 std.cppm）
+# 模块模板固定 libc++（import std 使用 libc++ 标准库模块元数据）
 set(CXX_USING_LIBCXX ON CACHE BOOL "Using libc++" FORCE)
 if(CXX_PREFERRED_COMPILER STREQUAL "clang++" AND CXX_STDLIB STREQUAL "libc++")
   set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")

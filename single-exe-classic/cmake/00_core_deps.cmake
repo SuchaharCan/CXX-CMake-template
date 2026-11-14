@@ -18,7 +18,7 @@
 include_guard(GLOBAL)
 
 # ---- 最小版本（可用 -D 覆盖）----
-set(CXX_MIN_CMAKE "4.1" CACHE STRING "Minimum CMake version")
+set(CXX_MIN_CMAKE "4.5.0" CACHE STRING "Minimum CMake version")
 set(CXX_MIN_NINJA "1.11" CACHE STRING "Minimum Ninja version")
 set(CXX_MIN_LLVM "18" CACHE STRING "Minimum LLVM/clang major version")
 set(CXX_MIN_GCC "14" CACHE STRING "Minimum GCC major version")

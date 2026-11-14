@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # ci/install-deps-macos.sh — GitHub macOS runner / 自建 macOS 27 依赖安装
-# 用途：Homebrew 补齐 cmake≥4.4.4 / clang++≥23.1 / ninja / just / grc
+# 用途：Homebrew 补齐 cmake≥4.5.0 / clang++≥23.1 / ninja / just / grc
 #       / spdlog / fmt / googletest / google-benchmark / doxygen / ccache / bqlog
 # 模式：默认缺失则 brew install；版本不足则 brew upgrade；
 #       CI_DEPS_CHECK_ONLY=1 只检查不安装。
@@ -54,7 +54,7 @@ just_ver="$(just --version | awk '{print $2}')"
 clang_ver="$(/opt/homebrew/opt/llvm/bin/clang++ --version | head -1 | sed -E 's/.* version ([0-9.]+).*/\1/')"
 
 upgrade=()
-check_min "$cmake_ver" "4.4.4" cmake || upgrade+=(cmake)
+check_min "$cmake_ver" "4.5.0" cmake || upgrade+=(cmake)
 check_min "$just_ver" "1.20.0" just || upgrade+=(just)
 check_min "$clang_ver" "23.1.0" clang++ || upgrade+=(llvm)
 
@@ -85,7 +85,7 @@ if ! brew list --versions bqlog >/dev/null 2>&1; then
   fi
 fi
 
-check_min "$cmake_ver" "4.4.4" cmake
+check_min "$cmake_ver" "4.5.0" cmake
 check_min "$just_ver" "1.20.0" just
 check_min "$clang_ver" "23.1.0" "clang++"
 

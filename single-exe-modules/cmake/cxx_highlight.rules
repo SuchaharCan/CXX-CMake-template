@@ -29,5 +29,4 @@
 #[^#]*$ | comment
 \bDoxygen\b | yellow
 \bclang-doc\b | yellow
-\bstd.cppm\b | yellow
 \b.cppm.o\b | yellow

@@ -65,7 +65,7 @@ build/docs/clang-doc/html/index.html
 
 `docs-clangdoc` 会先构建模块目标，再把 `compile_commands.json` 过滤为所选目标
 和项目源码的正常 `.o` 条目，确保 `.modmap` 存在且不会误选 CMake 的扫描临时项。
-生成的 `std.cppm`/`bq.log.cppm` 不作为直接文档输入；clang-doc 仍按 import 关系
+生成的 std BMI/`bq.log.cppm` 不作为直接文档输入；clang-doc 仍按 import 关系
 为 `std` 等依赖生成映射页。Doxygen 与 clang-doc 两个 HTML 入口都会生成。
 
 ## LLDB 调试
@@ -79,7 +79,7 @@ build/docs/clang-doc/html/index.html
 
 ## 构建
 
-macOS + CMake 4.4+ + Ninja + Clang 23+ + C++26 + libc++。
+macOS + CMake 4.5+ + Ninja + Clang 23+ + C++26 + libc++。
 
 ```bash
 just doctor

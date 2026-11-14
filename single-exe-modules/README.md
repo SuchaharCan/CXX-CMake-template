@@ -19,7 +19,7 @@
 
 ### 1.2 模块构建与查找方式（更稳定）
 
-- **std 模块**：普通 TU 的 `import std` 走 CMake 原生支持；命名模块接口单元内的 `import std` 由 `00_core_modules` 把 clang 自带 `std.cppm`（`<llvm>/share/libc++/v1/`）编译为显式目标 `cxx_std_module`（`-w` + 私有 include 目录），std 模块与工具链版本严格一致。
+- **std 模块**：`import std` 全部由 CMake 4.5 原生处理（CMP0155 NEW 自动为 C++20+ 目标启用 CXX_SCAN_FOR_MODULES），std BMI 由 CMake 按本机架构构建，不再手工定位/复制 `std.cppm`。
 - **自研模块查找**：`cxx_add_module` 使用 `FILE_SET CXX_MODULES`，依赖扫描走 CMake 原生 `clang-scan-deps`（其路径由 `00_core_compiler` 的 opt 软链自愈保障），不再手工拼 `.pcm/.o`。
 - **生成器**：模块模板强制 Ninja（`cmake -G Ninja ..`），just 已内置。
 
@@ -81,13 +81,13 @@ just configure -DCXX_SHOW_CMAKE_VARIABLES=OFF
 
 ## 3. 依赖与版本门禁
 
-必选：`cmake ≥4.4.4`、`ninja`、`clang++ 23.1`（`import std` 需 Clang ≥17，模板锁定 23.1）、`just`、`spdlog`、`grc`；推荐 `bqlog`。
+必选：`cmake ≥4.5.0`、`ninja`、`clang++ 23.1`（`import std` 需 Clang ≥18.1.2，模板锁定 23.1）、`just`、`spdlog`、`grc`；推荐 `bqlog`。
 
 bqlog 官方安装方式：`brew install bqlog`（macOS 与 Linux Homebrew 均可；
 Linuxbrew 前缀通常为 `/home/linuxbrew/.linuxbrew`）。非标准安装可用
 `-DCXX_BQLOG_ROOT=/path/to/bqlog` 或环境变量 `BQLOG_ROOT` 指定。
 
-标准库策略：模块依赖 libc++（`import std` 使用 libc++ 的 std.cppm）。
+标准库策略：模块依赖 libc++（`import std` 由 CMake 4.5 + Ninja 原生处理）。
 Linux 上请用 `ci/install-libcxx-deps.sh` 构建配套的
 spdlog/fmt/gtest/benchmark，并设置 `CXX_LIBCXX_DEPS_PREFIX` 指向安装前缀；
 macOS 使用 Homebrew 的 libc++ 版本依赖即可。
@@ -110,7 +110,7 @@ Linux 本地复现：`CI_LOCAL_BUILD_DEPS=1 just local-ci`。
 
 | 日期 | 变更 |
 |------|------|
-| 2026-10-28 | **v2 重构（对齐 single-exe-classic）**：cmake/ 分层 `00_core/10_core/9*_opt`；`import std` 改 CMake 原生（移除 Generator/StdlibConfig/StdModule/Modules/stdlib 手工编译）；cmake ≥4.4.4、clang ≥23.1；grc 着色 + 规则表；bqlog 三模式；justfile 全命令；GTest 默认 OFF；文档合并为 README |
+| 2026-11-15 | **v3 CMake 4.5**：最小 CMake 4.5.0；`import std` 全部走 CMake 4.5 原生支持（移除 `cxx_std_module` 手工编译 std.cppm）；bqlog 模块直接引用绝对路径 FILE_SET |
 | 2026-10-28 | 清理无关文件（vcpkg.json、UserPresets.example、.pre-commit、源根 compile_commands.json、ARCHITECTURE.md）；`.clangd` 指向 `build/`；`.gitignore` 三分区 |
 | 2026-10-29 | **增量 CI**：push/PR 只构建差异涉及的模板，手动触发仍运行完整矩阵；共享 CI 变更回退全量 |
 | 2026-10-29 | **配置输出**：头文件输入改为 `cmake/single-exe-modules.h.in`；新增 `CXX_SHOW_CMAKE_CONFIG=OFF` 与 `CXX_SHOW_CMAKE_VARIABLES=ON` 两个日志开关 |

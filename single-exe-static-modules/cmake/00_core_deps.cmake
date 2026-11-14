@@ -17,7 +17,7 @@
 include_guard(GLOBAL)
 
 # ---- 最小版本（可用 -D 覆盖）----
-set(CXX_MIN_CMAKE "4.4.4" CACHE STRING "Minimum CMake version")
+set(CXX_MIN_CMAKE "4.5.0" CACHE STRING "Minimum CMake version")
 set(CXX_MIN_NINJA "1.11" CACHE STRING "Minimum Ninja version")
 set(CXX_MIN_LLVM "23.1" CACHE STRING "Minimum LLVM/clang version（import std 需 Clang ≥17，模板锁定 23.1）")
 set(CXX_MIN_GCC "14" CACHE STRING "Minimum GCC major version")
@@ -295,13 +295,9 @@ function(cxx_bqlog_module_target)
     set(CXX_BQLOG_MODE "header" CACHE STRING "bqlog integration" FORCE)
     return()
   endif()
-  # file set 要求源文件位于 target 基目录内 → 拷贝进 build 目录
-  set(_mod_dir "${CMAKE_BINARY_DIR}/.cxx_bqlog_module")
-  file(COPY "${_cppm}" DESTINATION "${_mod_dir}")
-  set(_mod_src "${_mod_dir}/bq.log.cppm")
   add_library(cxx_bqlog_module STATIC)
   target_sources(cxx_bqlog_module PUBLIC
-    FILE_SET CXX_MODULES BASE_DIRS "${_mod_dir}" FILES "${_mod_src}")
+    FILE_SET CXX_MODULES BASE_DIRS "${CXX_BQLOG_INCLUDE_DIR}" FILES "${_cppm}")
   target_compile_features(cxx_bqlog_module PUBLIC cxx_std_20)
   target_include_directories(cxx_bqlog_module PUBLIC "${CXX_BQLOG_INCLUDE_DIR}")
   if(CXX_BQLOG_TARGET)

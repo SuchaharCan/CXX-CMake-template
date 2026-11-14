@@ -2,7 +2,7 @@
 # =============================================================================
 # ci/install-deps-ubuntu.sh — Ubuntu 24.04 依赖安装
 # 兼容 root（容器）与 GitHub runner（非 root + passwordless sudo）。
-# 安装：cmake≥4.4.4 / gcc 16 / clang++ 23.1 / libc++ / ninja / just / grc
+# 安装：cmake≥4.5.0 / gcc 16 / clang++ 23.1 / libc++ / ninja / just / grc
 #       / spdlog / fmt / gtest / benchmark / doxygen / ccache
 # bqlog：官方方式 brew install bqlog（Linux 使用 Linuxbrew）；
 # 无 Linuxbrew 时模板 warning 并跳过（可选依赖，非阻断）。
@@ -50,7 +50,7 @@ $SUDO apt-get install -y --no-install-recommends grc || echo "warn: grc unavaila
 # IWYU 版本与 Clang 23 常不匹配：不强制安装，just iwyu 会自动跳过
 echo "info: IWYU 未安装（可选工具，just iwyu 将降级跳过）"
 
-# ---- CMake ≥4.4.4（官方二进制，不依赖 Python/pip）----
+# ---- CMake ≥4.5.0（官方二进制，不依赖 Python/pip）----
 CASE_ARCH="$(dpkg --print-architecture)"
 case "${CASE_ARCH}" in
   amd64) CMAKE_ARCH="x86_64"; JUST_ARCH="x86_64" ;;
@@ -64,12 +64,12 @@ esac
 _cmake_need=1
 if command -v cmake >/dev/null 2>&1; then
   _cmake_ver="$(cmake --version | head -1 | awk '{print $3}')"
-  if [ "$(printf '%s\n%s\n' "4.4.4" "$_cmake_ver" | sort -V | head -1)" = "4.4.4" ]; then
+  if [ "$(printf '%s\n%s\n' "4.5.0" "$_cmake_ver" | sort -V | head -1)" = "4.5.0" ]; then
     _cmake_need=0
   fi
 fi
 if [ "$_cmake_need" -eq 1 ]; then
-  CMAKE_VERSION_PIN="${CMAKE_VERSION_PIN:-4.4.5}"
+  CMAKE_VERSION_PIN="${CMAKE_VERSION_PIN:-4.5.0}"
   CMAKE_TARBALL="cmake-${CMAKE_VERSION_PIN}-linux-${CMAKE_ARCH}.tar.gz"
   download_github \
     "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_PIN}/${CMAKE_TARBALL}" \

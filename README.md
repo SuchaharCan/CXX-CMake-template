@@ -52,7 +52,7 @@ URL 兼容契约固定如下，不能被 clang-doc 接入破坏：
 
 - Ubuntu 24.04 + Ubuntu Toolchain PPA 当前可用的 GCC 16（`gcc` / `g++`）
 - apt.llvm.org 的 LLVM/Clang 23.1、libc++、LLD、LLDB 与常用分析工具
-- CMake 4.4.5、Ninja、just、ccache、grc、Doxygen
+- CMake 4.5.0、Ninja、just、ccache、grc、Doxygen
 - 与 libc++ ABI 匹配的 spdlog/fmt/GTest/Benchmark，供模块模板直接使用
 
 ### 路径与职责
@@ -348,8 +348,15 @@ just build
 just build-clang      # 显式 clang++ + libc++
 ```
 
-| 平台 / 模板   | 默认             | 备选                                     | 说明                              |
-| ------------- | ---------------- | ---------------------------------------- | --------------------------------- |
-| macOS classic | clang++ + libc++ | g++ + libstdc++（需自建 libstdc++ 依赖） | Homebrew 依赖都是 libc++ ABI      |
-| Linux classic | g++ + libstdc++  | clang++ + libc++（CI 构建配套依赖）      | 与 apt 依赖一致                   |
-| Linux modules | clang++ + libc++ | 无（必须）                               | `import std` 使用 libc++ std.cppm |
+| 平台 / 模板   | 默认             | 备选                                     | 说明                                         |
+| ------------- | ---------------- | ---------------------------------------- | -------------------------------------------- |
+| macOS classic | clang++ + libc++ | g++ + libstdc++（需自建 libstdc++ 依赖） | Homebrew 依赖都是 libc++ ABI                 |
+| Linux classic | g++ + libstdc++  | clang++ + libc++（CI 构建配套依赖）      | 与 apt 依赖一致                              |
+| Linux modules | clang++ + libc++ | 无（必须）                               | `import std` 由 CMake 4.5 原生处理（libc++） |
+
+
+> 变更历史： 
+
+* 2026-11-15  
+    > std 模块机制：移除了手工定位/复制 std.cppm 的 cxx_enable_std_module 与 cxx_std_module 目标，改为 CMake 4.5 原生 import std——CMP0155 NEW 下 target_compile_features(cxx_std_20+) 自动启用 CXX_SCAN_FOR_MODULES，
+std BMI 由 CMake 按当前机器架构构建（构建日志中可见 @cmake_cxx_std@ 合成目标）。针对 brew LLVM 把 libc++.modules.json 放在 <llvm>/lib/c++/ 的布局，编译器发现层新增了自动定位并设置 CMAKE_CXX_STDLIB_MODULES_JSON；bqlog 模块也改为直接 FILE_SET CXX_MODULES BASE_DIRS 引用，不再拷贝进构建目录。Debug 下 libc++ hardening 宏同步写入 CMAKE_CXX_FLAGS_DEBUG，保证 std BMI 与业务模块 ABI 一致。
