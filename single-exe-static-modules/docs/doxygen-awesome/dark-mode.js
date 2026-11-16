@@ -1,31 +1,46 @@
-/* 默认启用深色模式；用户通过 Doxygen 原生开关切换后记住选择。 */
+/*
+ * 首次访问默认深色；之后完全交给 Doxygen 的 darkmode_toggle.js 管理。
+ *
+ * 不要在这里直接切换 html.dark-mode：那样会让页面 class 与 DarkModeToggle
+ * 内部状态不同步，造成点击图标第一次无效。
+ */
 (function () {
-  function setCookie(name, value) {
-    document.cookie = name + "=" + value + "; path=/";
-  }
-  function clearCookie(name) {
-    document.cookie = name + "=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-  }
-  function applyDark(dark) {
-    document.documentElement.classList.toggle("dark-mode", dark);
-    document.documentElement.classList.toggle("light-mode", !dark);
-    if (dark) {
-      setCookie("prefers-dark", "1");
-      clearCookie("prefers-light");
-    } else {
-      setCookie("prefers-light", "1");
-      clearCookie("prefers-dark");
-    }
-    document.querySelectorAll(".dark-mode-visible").forEach(function (el) {
-      el.style.display = dark ? "inline-block" : "none";
-    });
-    document.querySelectorAll(".light-mode-visible").forEach(function (el) {
-      el.style.display = dark ? "none" : "inline-block";
+  "use strict";
+
+  const initializedCookie = "docs-theme-initialized";
+
+  function hasCookie(name) {
+    return document.cookie.split("; ").some(function (item) {
+      return item.indexOf(name + "=") === 0;
     });
   }
 
-  var savedDark = document.cookie.indexOf("prefers-dark") !== -1;
-  var savedLight = document.cookie.indexOf("prefers-light") !== -1;
-  // 默认深色：只有用户明确选过浅色时才用浅色
-  applyDark(savedDark || !savedLight);
+  function rememberInitialization() {
+    document.cookie =
+      initializedCookie +
+      "=1; path=/; max-age=31536000; SameSite=Lax";
+  }
+
+  function initializeDefaultTheme() {
+    if (typeof DarkModeToggle === "undefined") {
+      return;
+    }
+
+    // 已有偏好或此前已经初始化过，则尊重用户和系统设置。
+    if (
+      hasCookie(initializedCookie) ||
+      hasCookie("prefers-dark") ||
+      hasCookie("prefers-light")
+    ) {
+      rememberInitialization();
+      return;
+    }
+
+    // 通过 Doxygen 原生 setter 同步 cookie、内部状态和页面 class。
+    DarkModeToggle.userPreference = true;
+    rememberInitialization();
+  }
+
+  // darkmode_toggle.js 在上一段同步脚本中已定义 DarkModeToggle。
+  initializeDefaultTheme();
 })();

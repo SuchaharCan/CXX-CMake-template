@@ -73,3 +73,73 @@ html.dark-mode select.docs-version-select {
   color: hsl(279, 50%, 84%);
   border-color: hsl(279, 35%, 40%);
 }
+
+/*
+ * Doxygen 1.18 内置开关使用 <dark-mode-toggle>，而当前 Doxygen Awesome CSS
+ * 只定义了旧标签 <doxygen-awesome-dark-mode-toggle> 的样式。这里补齐图标
+ * 的布局、点击反馈与键盘焦点样式。
+ */
+#top #main-nav,
+#top #main-menu {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#searchBoxPos2 {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#searchBoxPos2 #MSearchBox {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+  margin-right: 0;
+}
+
+#searchBoxPos2 dark-mode-toggle {
+  flex: 0 0 auto;
+  float: none !important;
+}
+
+dark-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--searchbar-height) - 4px) !important;
+  height: calc(var(--searchbar-height) - 4px) !important;
+  margin: 0 0 0 var(--spacing-small);
+  padding: 0 !important;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--searchbar-foreground);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+dark-mode-toggle > svg {
+  transition: transform var(--animation-duration) ease-in-out;
+}
+
+dark-mode-toggle:active > svg {
+  transform: scale(0.5);
+}
+
+dark-mode-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.24);
+}
+
+html.dark-mode dark-mode-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.24);
+}
+
+dark-mode-toggle:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 50%;
+}

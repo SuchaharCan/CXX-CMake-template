@@ -32,8 +32,10 @@ HTML_EXTRA_STYLESHEET  = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-awesom
                          "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-awesome-sidebar-only.css" \
                          "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-custom.css"
 HTML_EXTRA_FILES       = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/version-switcher.js" \
-                         "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/dark-mode.js"
+                         "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/dark-mode.js" \
+                         "@CMAKE_SOURCE_DIR@/docs/doxygen/navtree-policy.js"
 HTML_HEADER            = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/header.html"
+HTML_FOOTER            = "@CMAKE_SOURCE_DIR@/docs/doxygen/footer.html"
 HTML_COLORSTYLE        = TOGGLE
 GENERATE_TREEVIEW      = YES
 TREEVIEW_WIDTH         = 335
