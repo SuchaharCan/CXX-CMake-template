@@ -12,7 +12,9 @@ module;
 export module BoostAlgorithms;
 
 export namespace BoostAlgorithms {
-
+/**
+ * @note 字符转大写， 封装Boost::algorithm::to_upper()
+ */
 inline std::string to_upper(std::string text) {
   boost::algorithm::to_upper(text);
   return text;

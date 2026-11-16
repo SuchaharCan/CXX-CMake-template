@@ -19,6 +19,9 @@ struct Note {
 };
 
 /// 在内存数据库中插入一条记录并返回当前行数。
+/**
+ * @note 插入 且 计数
+ */
 inline int insert_and_count(std::string_view text) {
   using namespace sqlite_orm;
   auto storage =
