@@ -13,6 +13,8 @@ export module BoostAlgorithms;
 
 export namespace BoostAlgorithms {
 /**
+ * @brief 模块化版本的to_upper接口函数
+ * @param text 字符串文本
  * @note 字符转大写， 封装Boost::algorithm::to_upper()
  */
 inline std::string to_upper(std::string text) {
