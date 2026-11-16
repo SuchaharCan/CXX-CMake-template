@@ -115,7 +115,7 @@ build_template() {
   local template_dir="${ROOT}/${template_name}"
   local build_dir="${BUILD_ROOT}/${template_name}"
   local destination="${SITE_DIR}/${template_name}"
-  local doxygen_html_dir="${build_dir}/docs/doxygen/html"
+  local doxygen_html_dir="${build_dir}/docs/doxygen/release/html"
   local clangdoc_html_dir="${build_dir}/docs/clang-doc/html"
   local clangdoc_log="${build_dir}/clang-doc-build.log"
 
@@ -135,6 +135,7 @@ build_template() {
     -DCXX_STDLIB=auto \
     -DCXX_ENABLE_CCACHE=ON \
     -DCXX_ENABLE_DOCS=ON \
+    -DCXX_DOC_VERSION=release \
     -DCXX_DOC_CLANGDOC=ON \
     -DCXX_DOC_DOXYGEN=ON \
     -DCXX_ENABLE_CLANG_TIDY=OFF \

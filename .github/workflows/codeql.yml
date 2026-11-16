@@ -1,0 +1,37 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL C++ analysis
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+
+      - name: Install dependencies
+        run: bash ci/install-deps-macos.sh
+
+      - name: Install Conan dependencies
+        run: (cd single-exe-static-modules && just conan)
+
+      - name: Build (static modules)
+        run: (cd single-exe-static-modules && just build)
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3

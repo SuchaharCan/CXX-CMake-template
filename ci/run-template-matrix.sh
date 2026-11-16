@@ -17,9 +17,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RECIPES="${CI_JUST_RECIPES:-env list build test parallel-test docs bench fuzz coverage iwyu mutation-test verbose}"
+RECIPES="${CI_JUST_RECIPES:-build test parallel-test docs bench fuzz coverage iwyu mutation-test}"
 REQUIRED_RECIPES="${CI_REQUIRED_RECIPES-build}"
-SKIP_RECIPES="local-ci check"
+# 非编译构建的命令在矩阵中强制跳过（分析/文档站/打包/安装/清理等）
+SKIP_RECIPES="local-ci check conan sonar codeql docs-sphinx doxygen fmt icons clean package install verify-install verify-data ccache-stats env doctor list"
 LOGDIR="${CI_LOG_DIR:-${ROOT}/.ci-logs}"
 mkdir -p "$LOGDIR"
 
@@ -71,8 +72,19 @@ for template_dir in "${template_dirs[@]}"; do
   echo "############################################################"
 
   if [ "${CI_FRESH_BUILD:-0}" = "1" ] && [ -d "$template_dir/build" ]; then
-    echo "[ci] 清理 ${template_name}/build（CI_FRESH_BUILD=1）"
+    echo "[ci] 清理 ${template_name}/build（保留 build/conan 依赖目录）"
+    conan_backup=""
+    if [ -d "$template_dir/build/conan" ]; then
+      conan_backup="$(mktemp -d)/conan"
+      mkdir -p "$conan_backup"
+      cp -R "$template_dir/build/conan/." "$conan_backup/" 2>/dev/null || true
+    fi
     find "$template_dir/build" -mindepth 1 -depth -delete
+    if [ -n "$conan_backup" ]; then
+      mkdir -p "$template_dir/build/conan"
+      cp -R "$conan_backup/." "$template_dir/build/conan/" 2>/dev/null || true
+      rm -rf "$(dirname "$conan_backup")"
+    fi
   fi
 
   summary="$(cd "$template_dir" && just --summary 2>/dev/null || true)"

@@ -108,6 +108,8 @@ function(cxx_register_docs_targets)
       add_custom_target(docs-doxygen
         COMMAND "${CMAKE_COMMAND}" -E remove_directory
           "${CMAKE_BINARY_DIR}/docs/doxygen/${CXX_DOC_VERSION}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+          "${CMAKE_BINARY_DIR}/docs/doxygen/${CXX_DOC_VERSION}"
         COMMAND "${DOXYGEN_EXECUTABLE}" "${_doxy_out}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/docs"
         COMMENT "Doxygen → ${_doxy_html}"

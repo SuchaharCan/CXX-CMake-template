@@ -141,4 +141,49 @@ if [ "$CHECK_ONLY" != "1" ]; then
   done
 fi
 
+# ---- Conan：确保安装 + 生成本机构建 profile（compiler.version 跟随本机 clang）----
+if ! command -v conan >/dev/null 2>&1; then
+  brew install conan
+fi
+command -v conan >/dev/null 2>&1 || { echo "error: conan unavailable after install"; exit 1; }
+
+llvm_major="$(/opt/homebrew/opt/llvm/bin/clang++ --version | head -1 | sed -E 's/.*version ([0-9]+).*/\1/')"
+for profile in single-exe-*/conan/profiles/macos-arm64; do
+  [ -e "$profile" ] || continue
+  mkdir -p "$(dirname "$profile")"
+  cat > "$profile" <<EOF
+[settings]
+arch=armv8
+build_type=Release
+compiler=clang
+compiler.cppstd=gnu17
+compiler.libcxx=libc++
+compiler.version=${llvm_major}
+os=Macos
+EOF
+done
+echo "conan profile regenerated (clang ${llvm_major})"
+
+# 为含 conanfile 的模板一次性安装锁定依赖（必选 + 可选；后续 just 构建直接复用）
+for conanfile in single-exe-*/conanfile.txt; do
+  [ -e "$conanfile" ] || continue
+  d="$(dirname "$conanfile")"
+  echo "conan install @ ${d}"
+  (cd "$d" && conan install . -of build/conan \
+    --profile:host=conan/profiles/macos-arm64 \
+    --profile:build=conan/profiles/macos-arm64 \
+    -r conancenter --build=missing)
+done
+
+# ---- 可选 cask：SonarQube CLI / CodeQL（缺失则尝试安装，不阻断 CI）----
+for cask in sonarqube-cli codeql; do
+  if ! brew list --cask --versions "$cask" >/dev/null 2>&1; then
+    if [ "$CHECK_ONLY" = "1" ]; then
+      echo "warn: missing cask ${cask}"
+      continue
+    fi
+    brew install --cask "$cask" || echo "warn: cask ${cask} unavailable"
+  fi
+done
+
 echo "macOS $(sw_vers -productVersion) — deps ok"

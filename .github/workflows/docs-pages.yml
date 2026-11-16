@@ -50,6 +50,14 @@ jobs:
       - name: Install documentation dependencies
         run: bash ci/install-deps-macos.sh
 
+      - name: Cache Conan dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-macos-${{ hashFiles('single-exe-static-modules/conanfile.txt') }}
+          restore-keys: |
+            conan-macos-
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
