@@ -80,6 +80,7 @@ doctor:
 # 下载/构建 Conan 锁定的第三方库（国内镜像可 CONAN_REMOTE=tencent 覆盖）。
 # 已存在于本地缓存的包会直接复用，不会重复下载；重库仅取核心组件（见 conanfile.txt）。
 conan:
+    @command -v conan >/dev/null 2>&1 || { echo "missing conan — brew install conan"; exit 1; }
     @echo "Conan requirements: boost abseil nlohmann_json asio eigen sqlite_orm opencv gtest"
     @conan install . -of {{conan_output}} --profile:host={{conan_profile}} --profile:build={{conan_profile}} -r {{conan_remote}} --build=missing
 
