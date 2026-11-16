@@ -115,7 +115,7 @@ build_template() {
   local template_dir="${ROOT}/${template_name}"
   local build_dir="${BUILD_ROOT}/${template_name}"
   local destination="${SITE_DIR}/${template_name}"
-  local doxygen_html_dir="${build_dir}/docs/doxygen/release/html"
+  local doxygen_html_dir=""
   local clangdoc_html_dir="${build_dir}/docs/clang-doc/html"
   local clangdoc_log="${build_dir}/clang-doc-build.log"
 
@@ -147,6 +147,21 @@ build_template() {
 
   cmake --build "$build_dir" --target docs-doxygen -j"$JOBS"
   cmake --build "$build_dir" --target docs-clangdoc -j"$JOBS" 2>&1 | tee "$clangdoc_log"
+
+  # Doxygen 输出路径随模板而异：版本化模板在 docs/doxygen/<version>/html，
+  # 旧模板仍在 docs/doxygen/html；按实际产物动态定位。
+  for candidate in \
+    "${build_dir}/docs/doxygen/release/html" \
+    "${build_dir}/docs/doxygen/html"; do
+    if [[ -f "${candidate}/index.html" ]]; then
+      doxygen_html_dir="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$doxygen_html_dir" ]]; then
+    doxygen_html_dir="$(dirname "$(find "${build_dir}/docs/doxygen" -type f \
+      -name index.html -path '*/html/index.html' 2>/dev/null | head -1)")"
+  fi
 
   if grep -Eq 'no such file or directory: .*\.modmap|Failed to run action on|fatal error:' \
     "$clangdoc_log"; then
