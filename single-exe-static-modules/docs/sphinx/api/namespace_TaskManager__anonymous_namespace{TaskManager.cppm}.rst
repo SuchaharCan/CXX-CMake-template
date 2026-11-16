@@ -1,0 +1,101 @@
+
+.. _namespace_TaskManager__anonymous_namespace{TaskManager.cppm}:
+
+Namespace TaskManager::anonymous_namespace{TaskManager.cppm}
+============================================================
+
+
+.. contents:: Contents
+   :local:
+   :backlinks: none
+
+
+
+
+
+Classes
+-------
+
+
+- :ref:`exhale_struct_struct_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1_1_loaded_task`
+
+- :ref:`exhale_struct_struct_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1_1_project_node`
+
+- :ref:`exhale_struct_struct_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1_1_task_location`
+
+- :ref:`exhale_class_class_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1_1_scoped_file_lock`
+
+
+Functions
+---------
+
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a75e39fe21f94cbc24d05cdda672d9f39`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a3748c682fdaa186a2e84efcb9a67965b`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ada89faed2b8c43e01b7fb65b584a3d05`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1aa21efb263016d0bcf9d76778c992fbae`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ab202c39cb2ee104fad803fee1d679780`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a08cc1c405d55f667caa346660e6301e1`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1af079c973d2197c1f89773105bfab2218`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a1bfdb209b988c5f0a6d7d5f0b9b8b6cd`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a24b9afdab174e69149c865317770b7de`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1aa767597e7a5ac97b8ecc7f5bd51dd528`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a6b0ae4f6521075fd10ffaa7080dabf61`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1afe5d76fc9e191c5dbd963332e33d9cf2`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a005a6f86045ac8806f127389589e20a0`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1aefd04586181327b4873913b0acf4d8ac`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a5c60b8ec4e3691d4fe5e1a5a7f3d2015`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ad3b3459a895455aba7aec04c223a560b`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a72681d852416e2f6dea83c9c7f30ce71`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a0e579e3c5311aa1a4c9735d6e4f3d958`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a488d3affd70f642f9f17c4253387df15`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a2622e850211a76ef6427f3f91dbe206f`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ab99a59493446f7566706765b8748f672`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a06f3d67595851fd1f7137b9a35ed1fec`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1afeabd61de36659a1d946e4b24d1fee3d`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ad29b8d6e92b458c4de2da567a1d13268`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a22b3d08c4d34025c931b59f28ae73edf`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a5f667cc9a925e15574cc299377d1e916`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ae3b5829dfd61a9e7ed075b8a184d0bde`
+
+- :ref:`exhale_function_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1a352aafeb7bd2e5ee2b399bdc9f72f287`
+
+
+Typedefs
+--------
+
+
+- :ref:`exhale_typedef_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1aca4ef036a7da9b670311b0ce140d9aac`
+
+
+Variables
+---------
+
+
+- :ref:`exhale_variable_namespace_task_manager_1_1anonymous__namespace_02_task_manager_8cppm_03_1ae1eef38c6f19d57d6ba7bc4ba837586b`

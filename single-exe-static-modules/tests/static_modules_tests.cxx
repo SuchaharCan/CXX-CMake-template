@@ -17,13 +17,12 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <set>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include "json.hpp"
 
 import std;
 import InterfaceLog;
@@ -31,6 +30,9 @@ import ProjectSync;
 import ReminderSync;
 import TaskManager;
 import WorkflowUI;
+#ifdef CXX_ALGORITHMS_STUDY
+import AlgorithmsStudy;
+#endif
 
 namespace {
 
@@ -1943,3 +1945,11 @@ TEST(Boundary, CoreInterfacesEmitStructuredChangeLogs) {
   EXPECT_NE(logs.find("TaskManager::update_task"), std::string::npos);
   EXPECT_NE(logs.find("changed=title,priority"), std::string::npos);
 }
+
+#ifdef CXX_ALGORITHMS_STUDY
+/// 仅 Debug 构建：验证 Conan 依赖库经 AlgorithmsStudy 模块化封装后可用。
+TEST(AlgorithmsStudy, ConanDependencyWrappers) {
+  EXPECT_EQ(AlgorithmsStudy::kVersion, 1);
+  EXPECT_TRUE(AlgorithmsStudy::selfcheck());
+}
+#endif

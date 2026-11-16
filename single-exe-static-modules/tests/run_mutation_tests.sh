@@ -17,7 +17,7 @@ rm -rf "$WORK"
 # 隔离副本不需要构建产物；每个 mutant 都从同一份干净的源码开始。
 mkdir -p "$WORK/tests/.runtime" "$WORK/tests/logs"
 cp -R "$ROOT/CMakeLists.txt" "$ROOT/cmake" "$ROOT/modules" "$ROOT/src" \
-  "$ROOT/data" "$ROOT/json.hpp" "$WORK/"
+  "$ROOT/data" "$WORK/"
 cp "$ROOT/tests/static_modules_tests.cxx" \
   "$ROOT/tests/run_mutation_tests.sh" "$WORK/tests/"
 cp "$TASK_MODULE" "$ORIGINAL"
@@ -36,7 +36,8 @@ run_mutant() {
   if ! cmake -S "$WORK" -B "$WORK/build" -G Ninja \
       -DCMAKE_BUILD_TYPE=Debug \
       -DCXX_ENABLE_GTEST=ON \
-      -DCXX_ENABLE_CCACHE=ON >>"$log" 2>&1; then
+      -DCXX_ENABLE_CCACHE=ON \
+      "-DCMAKE_PREFIX_PATH=$ROOT/build/conan" >>"$log" 2>&1; then
     echo "BUILD FAILED: $name (see $log)" >&2
     return 1
   fi

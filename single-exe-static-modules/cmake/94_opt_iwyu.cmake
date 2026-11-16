@@ -97,7 +97,7 @@ function(cxx_register_iwyu_targets)
     endif()
   endif()
 
-  if(DEFINED CXX_TIDY_PLAIN_SOURCES AND CXX_TIDY_PLAIN_SOURCES)
+  if(DEFINED CXX_TIDY_PLAIN_SOURCES)
     set(_srcs ${CXX_TIDY_PLAIN_SOURCES})
   else()
     set(_srcs
@@ -106,7 +106,7 @@ function(cxx_register_iwyu_targets)
   endif()
 
   find_program(CXX_IWYU_TOOL NAMES iwyu_tool.py iwyu-tool)
-  if(CXX_IWYU_TOOL AND EXISTS "${CMAKE_BINARY_DIR}/compile_commands.json")
+  if(CXX_IWYU_TOOL AND EXISTS "${CMAKE_BINARY_DIR}/compile_commands.json" AND _srcs)
     add_custom_target(iwyu-check
       COMMAND "${CXX_IWYU_TOOL}" -p "${CMAKE_BINARY_DIR}" ${_srcs}
       WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -114,7 +114,7 @@ function(cxx_register_iwyu_targets)
       VERBATIM)
     cxx_msg(grass "iwyu-check target registered")
   else()
-    cxx_msg(gray "iwyu-check skipped (need iwyu_tool.py + compile_commands.json)")
+    cxx_msg(gray "iwyu-check skipped (need plain TUs + iwyu_tool.py + compile_commands.json)")
   endif()
 endfunction()
 

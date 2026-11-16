@@ -37,6 +37,7 @@ module;
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <random>
 #include <string>
@@ -44,8 +45,6 @@ module;
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include "json.hpp"
 
 export module TaskManager;
 

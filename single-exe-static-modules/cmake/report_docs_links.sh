@@ -21,5 +21,6 @@ emit_link() {
   fi
 }
 
-emit_link "Doxygen" "${build_dir}/docs/doxygen/html/index.html"
+emit_link "Doxygen (test 全模块)" "${build_dir}/docs/doxygen/test/html/index.html"
+emit_link "Doxygen (release 发布)" "${build_dir}/docs/doxygen/release/html/index.html"
 emit_link "clang-doc" "${build_dir}/docs/clang-doc/html/index.html"

@@ -28,6 +28,7 @@ project(
 include(cmake/00_core_color.cmake)
 include(cmake/00_core_log.cmake)
 include(cmake/00_core_deps.cmake)
+include(cmake/00_core_conan.cmake)
 include(cmake/00_core_buildlog.cmake)
 include(cmake/00_core_profile.cmake)
 include(cmake/00_core_modules.cmake)
@@ -44,6 +45,14 @@ cxx_set_lint_sources(
   modules/task_manager/include/TaskManager.cppm
   modules/reminder_sync/include/ReminderSync.cppm
   modules/workflow_ui/include/WorkflowUI.cppm
+  modules/algorithms_study/include/JsonAlgorithms.cppm
+  modules/algorithms_study/include/EigenAlgorithms.cppm
+  modules/algorithms_study/include/AsioAlgorithms.cppm
+  modules/algorithms_study/include/SqliteAlgorithms.cppm
+  modules/algorithms_study/include/AbseilAlgorithms.cppm
+  modules/algorithms_study/include/BoostAlgorithms.cppm
+  modules/algorithms_study/include/OpenCvAlgorithms.cppm
+  modules/algorithms_study/include/AlgorithmsStudy.cppm
   src/main.cpp
   tests/static_modules_tests.cxx
 )
@@ -113,6 +122,99 @@ target_link_libraries(workflow_ui PUBLIC
 cxx_apply_static_module_defaults(workflow_ui)
 cxx_msg(grass "STATIC module: workflow_ui")
 
+# ---- Conan 锁定的 JSON 依赖（替代旧 json.hpp 单头文件）------------------
+# 业务模块在全局模块片段里 #include <nlohmann/json.hpp>，include 路径由
+# nlohmann_json::nlohmann_json imported target 提供。
+if(TARGET nlohmann_json::nlohmann_json)
+  target_link_libraries(project_sync PUBLIC nlohmann_json::nlohmann_json)
+  target_link_libraries(task_manager PUBLIC nlohmann_json::nlohmann_json)
+  target_link_libraries(workflow_ui PUBLIC nlohmann_json::nlohmann_json)
+endif()
+
+# ---- 独立学习模块 Algorithms_Study（仅 Debug；按库独立 gating 的模块化封装）----
+# 每个 wrapper 只在对应 Conan 库存在时创建；AlgorithmsStudy 聚合当前可用的
+# wrapper，因此缺失重库（如 OpenCV）时其余模块与构建仍可正常通过。
+set(CXX_ALGORITHMS_STUDY_AVAILABLE FALSE)
+set(_study_modules "")
+set(_study_defines "")
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET nlohmann_json::nlohmann_json)
+  cxx_add_module(json_algorithms modules/algorithms_study/include/JsonAlgorithms.cppm)
+  target_include_directories(json_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(json_algorithms PUBLIC nlohmann_json::nlohmann_json)
+  cxx_apply_static_module_defaults(json_algorithms)
+  list(APPEND _study_modules json_algorithms)
+  list(APPEND _study_defines CXX_HAS_JSON_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET Eigen3::Eigen)
+  cxx_add_module(eigen_algorithms modules/algorithms_study/include/EigenAlgorithms.cppm)
+  target_include_directories(eigen_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(eigen_algorithms PUBLIC Eigen3::Eigen)
+  cxx_apply_static_module_defaults(eigen_algorithms)
+  list(APPEND _study_modules eigen_algorithms)
+  list(APPEND _study_defines CXX_HAS_EIGEN_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET asio::asio)
+  cxx_add_module(asio_algorithms modules/algorithms_study/include/AsioAlgorithms.cppm)
+  target_include_directories(asio_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(asio_algorithms PUBLIC asio::asio)
+  cxx_apply_static_module_defaults(asio_algorithms)
+  list(APPEND _study_modules asio_algorithms)
+  list(APPEND _study_defines CXX_HAS_ASIO_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET sqlite_orm::sqlite_orm)
+  cxx_add_module(sqlite_algorithms modules/algorithms_study/include/SqliteAlgorithms.cppm)
+  target_include_directories(sqlite_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(sqlite_algorithms PUBLIC sqlite_orm::sqlite_orm)
+  cxx_apply_static_module_defaults(sqlite_algorithms)
+  list(APPEND _study_modules sqlite_algorithms)
+  list(APPEND _study_defines CXX_HAS_SQLITE_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET absl::strings)
+  cxx_add_module(abseil_algorithms modules/algorithms_study/include/AbseilAlgorithms.cppm)
+  target_include_directories(abseil_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(abseil_algorithms PUBLIC absl::strings)
+  cxx_apply_static_module_defaults(abseil_algorithms)
+  list(APPEND _study_modules abseil_algorithms)
+  list(APPEND _study_defines CXX_HAS_ABSEIL_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET Boost::headers)
+  cxx_add_module(boost_algorithms modules/algorithms_study/include/BoostAlgorithms.cppm)
+  target_include_directories(boost_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(boost_algorithms PUBLIC Boost::headers)
+  cxx_apply_static_module_defaults(boost_algorithms)
+  list(APPEND _study_modules boost_algorithms)
+  list(APPEND _study_defines CXX_HAS_BOOST_ALGORITHMS)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND TARGET opencv::opencv_core)
+  cxx_add_module(opencv_algorithms modules/algorithms_study/include/OpenCvAlgorithms.cppm)
+  target_include_directories(opencv_algorithms PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(opencv_algorithms PUBLIC opencv::opencv_core)
+  cxx_apply_static_module_defaults(opencv_algorithms)
+  list(APPEND _study_modules opencv_algorithms)
+  list(APPEND _study_defines CXX_HAS_OPENCV_ALGORITHMS)
+endif()
+
+if(_study_modules)
+  cxx_add_module(algorithms_study modules/algorithms_study/include/AlgorithmsStudy.cppm)
+  target_include_directories(algorithms_study PUBLIC "${PROJECT_SOURCE_DIR}/modules/algorithms_study/include")
+  target_link_libraries(algorithms_study PUBLIC ${_study_modules})
+  foreach(_d IN LISTS _study_defines)
+    target_compile_definitions(algorithms_study PRIVATE "${_d}=1")
+  endforeach()
+  cxx_apply_static_module_defaults(algorithms_study)
+  set(CXX_ALGORITHMS_STUDY_AVAILABLE TRUE)
+  cxx_msg(grass "STATIC module: algorithms_study（Debug-only, ${_study_modules}）")
+else()
+  cxx_msg(yellow "AlgorithmsStudy skipped（未发现 Conan 学习依赖，先 just conan）")
+endif()
+
 # ---- 单 main：只做单层 import / CLI 路由 -------------------------------
 # 可执行目标名保持 `Stacks_Tools`，这是 Alfred 脚本和安装布局的稳定运行契约。
 cxx_add_module_consumer(Stacks_Tools src/main.cpp)
@@ -127,6 +229,10 @@ target_link_libraries(Stacks_Tools PRIVATE
   interface_log project_sync task_manager reminder_sync workflow_ui)
 cxx_apply_static_module_defaults(Stacks_Tools)
 cxx_msg(grass "single main: Stacks_Tools")
+if(CXX_ALGORITHMS_STUDY_AVAILABLE)
+  target_link_libraries(Stacks_Tools PRIVATE algorithms_study)
+  target_compile_definitions(Stacks_Tools PRIVATE CXX_ALGORITHMS_STUDY=1)
+endif()
 
 # ---- 单元测试（GTest：边界 + 并行；变异测试见 just mutation-test）----
 # 测试目标链接全部模块，但仍使用隔离运行时目录，不允许写真实 Stacks 数据。
@@ -146,6 +252,10 @@ if(CXX_GTEST_FOUND)
   target_compile_definitions(static_modules_tests PRIVATE
     STACKS_TEST_RUNTIME_DIR="${PROJECT_SOURCE_DIR}/tests/.runtime"
     STACKS_TEST_LOG_DIR="${PROJECT_SOURCE_DIR}/tests/logs")
+  if(CXX_ALGORITHMS_STUDY_AVAILABLE)
+    target_link_libraries(static_modules_tests PRIVATE algorithms_study)
+    target_compile_definitions(static_modules_tests PRIVATE CXX_ALGORITHMS_STUDY=1)
+  endif()
   cxx_add_gtest(static_modules_tests)
   cxx_msg(grass "GTest: static_modules_tests")
 endif()

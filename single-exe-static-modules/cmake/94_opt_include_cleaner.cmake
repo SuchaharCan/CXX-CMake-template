@@ -29,7 +29,7 @@ function(cxx_register_include_cleaner_targets)
     find_program(CXX_INCLUDE_CLEANER NAMES clang-include-cleaner include-cleaner)
   endif()
 
-  if(DEFINED CXX_TIDY_PLAIN_SOURCES AND CXX_TIDY_PLAIN_SOURCES)
+  if(DEFINED CXX_TIDY_PLAIN_SOURCES)
     set(_srcs ${CXX_TIDY_PLAIN_SOURCES})
   else()
     set(_srcs
@@ -37,7 +37,7 @@ function(cxx_register_include_cleaner_targets)
       "${CMAKE_SOURCE_DIR}/src/ScenarioLog.hxx")
   endif()
 
-  if(CXX_INCLUDE_CLEANER AND EXISTS "${CMAKE_BINARY_DIR}/compile_commands.json")
+  if(CXX_INCLUDE_CLEANER AND EXISTS "${CMAKE_BINARY_DIR}/compile_commands.json" AND _srcs)
     add_custom_target(include-cleaner-check
       COMMAND "${CXX_INCLUDE_CLEANER}" -p "${CMAKE_BINARY_DIR}" ${_srcs}
       WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -45,7 +45,7 @@ function(cxx_register_include_cleaner_targets)
       VERBATIM)
     cxx_msg(grass "include-cleaner-check registered (${CXX_INCLUDE_CLEANER})")
   else()
-    cxx_msg(yellow "include-cleaner-check skipped (need clang-include-cleaner + compile_commands.json)")
+    cxx_msg(yellow "include-cleaner-check skipped (need plain TUs + clang-include-cleaner + compile_commands.json)")
   endif()
 endfunction()
 

@@ -13,6 +13,8 @@ include_guard(GLOBAL)
 option(CXX_ENABLE_DOCS "Generate API docs targets (clang-doc / Doxygen)" OFF)
 option(CXX_DOC_CLANGDOC "clang-doc backend (LLVM, reads compile_commands.json)" ON)
 option(CXX_DOC_DOXYGEN "Doxygen backend (docs/Doxyfile.in)" ON)
+set(CXX_DOC_VERSION "test" CACHE STRING "Doxygen 输出版本标签：test | release")
+set_property(CACHE CXX_DOC_VERSION PROPERTY STRINGS test release)
 set(CXX_DOC_CLANGDOC_BUILD_TARGETS "" CACHE STRING
     "Targets built before clang-doc so C++ module .modmap files exist")
 set(CXX_DOC_CLANGDOC_SOURCES "" CACHE STRING
@@ -99,13 +101,13 @@ function(cxx_register_docs_targets)
     endif()
     set(_doxy_in "${CMAKE_SOURCE_DIR}/docs/Doxyfile.in")
     set(_doxy_out "${CMAKE_BINARY_DIR}/docs/Doxyfile")
-    set(_doxy_html "${CMAKE_BINARY_DIR}/docs/doxygen/html")
+    set(_doxy_html "${CMAKE_BINARY_DIR}/docs/doxygen/${CXX_DOC_VERSION}/html")
     if(DOXYGEN_EXECUTABLE AND EXISTS "${_doxy_in}")
       file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
       configure_file("${_doxy_in}" "${_doxy_out}" @ONLY)
       add_custom_target(docs-doxygen
         COMMAND "${CMAKE_COMMAND}" -E remove_directory
-          "${CMAKE_BINARY_DIR}/docs/doxygen"
+          "${CMAKE_BINARY_DIR}/docs/doxygen/${CXX_DOC_VERSION}"
         COMMAND "${DOXYGEN_EXECUTABLE}" "${_doxy_out}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/docs"
         COMMENT "Doxygen → ${_doxy_html}"

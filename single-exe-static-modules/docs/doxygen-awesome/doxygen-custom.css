@@ -1,0 +1,75 @@
+/* =============================================================================
+ * Omni-Stacks Doxygen 主题
+ * 参考 docs.opencv.org/5.0 的排版风格，主色使用 hsl(279, 51%, 27%)。
+ * 通过覆盖 Doxygen / doxygen-awesome 的 CSS 变量实现主题定制。
+ * ========================================================================== */
+
+html {
+  --primary-color: hsl(279, 51%, 27%);
+  --primary-dark-color: hsl(279, 51%, 19%);
+  --primary-light-color: hsl(279, 51%, 48%);
+  --primary-lighter-color: hsl(279, 45%, 82%);
+  --primary-lightest-color: hsl(279, 45%, 94%);
+
+  --page-background-color: #ffffff;
+  --page-foreground-color: #1b1b22;
+  --page-secondary-foreground-color: #5b5863;
+  --fragment-background: hsl(279, 30%, 97%);
+  --fragment-foreground: hsl(279, 24%, 18%);
+}
+
+html.dark-mode {
+  --primary-color: hsl(279, 62%, 70%);
+  --primary-dark-color: hsl(279, 56%, 54%);
+  --primary-light-color: hsl(279, 52%, 80%);
+  --primary-lighter-color: hsl(279, 35%, 31%);
+  --primary-lightest-color: hsl(279, 30%, 22%);
+
+  --page-background-color: hsl(279, 18%, 13%);
+  --page-foreground-color: #e7e2ec;
+  --page-secondary-foreground-color: #b7b0c0;
+  --fragment-background: hsl(279, 22%, 17%);
+  --fragment-foreground: #eee9f3;
+}
+
+/* OpenCV 风格的顶部标题栏 */
+#titlearea {
+  background: linear-gradient(135deg, hsl(279, 51%, 27%), hsl(279, 45%, 40%));
+  color: #ffffff;
+  border-bottom: 1px solid hsl(279, 51%, 19%);
+}
+
+#titlearea a,
+#titlearea #projectname,
+#titlearea #projectbrief,
+#titlearea #projectnumber {
+  color: #ffffff;
+}
+
+#titlearea a:hover {
+  color: hsl(279, 60%, 88%);
+}
+
+/* 版本切换下拉框 */
+.docs-version-wrap {
+  display: inline-block;
+  margin-left: 1rem;
+  vertical-align: middle;
+}
+
+select.docs-version-select {
+  appearance: none;
+  background: hsl(279, 45%, 92%);
+  color: hsl(279, 51%, 24%);
+  border: 1px solid hsl(279, 40%, 68%);
+  border-radius: 4px;
+  padding: 2px 22px 2px 8px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+html.dark-mode select.docs-version-select {
+  background: hsl(279, 30%, 20%);
+  color: hsl(279, 50%, 84%);
+  border-color: hsl(279, 35%, 40%);
+}

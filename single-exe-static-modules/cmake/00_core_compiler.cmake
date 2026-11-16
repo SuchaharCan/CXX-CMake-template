@@ -446,6 +446,11 @@ function(cxx_apply_llvm_runtime target)
     if(CXX_LLVM_LIB AND NOT CMAKE_BUILD_WITH_INSTALL_RPATH)
       target_link_options(${target} PRIVATE "LINKER:-rpath,${CXX_LLVM_LIB}")
     endif()
+    # 链接阶段显式指定 SDK，避免 clang 链接驱动回退调用 xcrun（在 CodeQL
+    # 的 preload_tracer 下 xcrun 会被误判为 x86_64 导致链接失败）。
+    if(APPLE AND CMAKE_OSX_SYSROOT)
+      target_link_options(${target} PRIVATE "-isysroot" "${CMAKE_OSX_SYSROOT}")
+    endif()
   elseif(CXX_USING_GCC AND CXX_GCC_ROOT)
     if(EXISTS "${CXX_GCC_ROOT}/lib/gcc")
       target_link_directories(${target} PRIVATE "${CXX_GCC_ROOT}/lib")

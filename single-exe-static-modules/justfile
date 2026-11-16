@@ -22,7 +22,7 @@ clang_format := env_var_or_default("CLANG_FORMAT", "clang-format")
 cmake_runner := "bash \"" + justfile_directory() + "/cmake/run_cmake_command.sh\""
 cxx_compiler := env_var_or_default("CXX_PREFERRED_COMPILER", "auto")
 cxx_stdlib := env_var_or_default("CXX_STDLIB", "auto")
-toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib + " -DCXX_ENABLE_CCACHE=ON"
+toolchain_flags := "-DCXX_PREFERRED_COMPILER=" + cxx_compiler + " -DCXX_STDLIB=" + cxx_stdlib + " -DCXX_ENABLE_CCACHE=ON -DCXX_ENABLE_CLANG_FORMAT=ON -DCXX_ENABLE_CLANG_TIDY=ON -DCXX_ENABLE_IWYU=ON"
 
 # ---- 本地运行/CI 可覆盖参数 ----------------------------------------------
 builddir := "build"
@@ -32,6 +32,10 @@ release_cxx_flags := "-Os -DNDEBUG -flto=thin -fvisibility=hidden -fvisibility-i
 release_link_flags := "-flto=thin -Wl,-dead_strip"
 llvm_strip := env_var_or_default("LLVM_STRIP", "llvm-strip")
 jobs := env_var_or_default("JOBS", num_cpus())
+conan_profile := "conan/profiles/macos-arm64"
+conan_remote := env_var_or_default("CONAN_REMOTE", "conancenter")
+conan_output := "build/conan"
+docs_venv := "build/docs-venv"
 # Alfred workflow 路径由 HOME 派生；用户可用 STACKS_WORKFLOW_DIR 指向其他安装。
 default_workflow_dir := env_var_or_default("STACKS_WORKFLOW_DIR", env_var("HOME") + "/Library/Application Support/Alfred/Alfred.alfredpreferences/workflows/user.workflow.55BE3092-6341-4EB7-8A16-0AD3648B7B73")
 
@@ -48,6 +52,11 @@ env:
     @echo "CXX_STDLIB              = {{CXX_STDLIB}}"
     @echo "CXX_BQLOG_MODE          = module"
     @echo "CXX_ENABLE_CCACHE       = {{CXX_ENABLE_CCACHE}}"
+    @echo "CXX_ENABLE_CLANG_FORMAT = ON"
+    @echo "CXX_ENABLE_CLANG_TIDY   = ON"
+    @echo "CXX_ENABLE_IWYU         = ON"
+    @echo "CONAN_REMOTE            = {{conan_remote}}"
+    @echo "CONAN_OUTPUT            = {{conan_output}}"
     @echo "JOBS                    = {{jobs}}"
     @echo "STACKS_WORKFLOW_DIR     = {{default_workflow_dir}}"
 
@@ -58,8 +67,21 @@ doctor:
     @echo "ninja: $(ninja --version)"
     @echo "just:  $(just --version)"
     @echo "jq:    $(jq --version)"
+    @echo "clang-format: $(command -v clang-format >/dev/null 2>&1 && clang-format --version || echo missing)"
+    @echo "clang-tidy:   $(command -v clang-tidy >/dev/null 2>&1 && clang-tidy --version | head -1 || echo missing)"
+    @echo "iwyu:         $(command -v include-what-you-use >/dev/null 2>&1 && include-what-you-use --version | head -1 || echo missing)"
+    @echo "doxygen:      $(command -v doxygen >/dev/null 2>&1 && doxygen --version || echo missing)"
+    @echo "conan:        $(command -v conan >/dev/null 2>&1 && conan --version | sed 's/Conan version //' || echo missing)"
+    @echo "sonar:        $(command -v sonar >/dev/null 2>&1 && sonar --version || echo missing)"
+    @echo "codeql:       $(command -v codeql >/dev/null 2>&1 && codeql --version || echo missing)"
     @echo "strip: $(command -v {{llvm_strip}})"
     @test -x /usr/bin/osascript && echo "osascript: ok"
+
+# 下载/构建 Conan 锁定的第三方库（国内镜像可 CONAN_REMOTE=tencent 覆盖）。
+# 已存在于本地缓存的包会直接复用，不会重复下载；重库仅取核心组件（见 conanfile.txt）。
+conan:
+    @echo "Conan requirements: boost abseil nlohmann_json asio eigen sqlite_orm opencv gtest"
+    @conan install . -of {{conan_output}} --profile:host={{conan_profile}} --profile:build={{conan_profile}} -r {{conan_remote}} --build=missing
 
 # 配置（auto 在 macOS = clang++ + libc++）；*ARGS 可覆盖任意 CMake option。
 configure *ARGS:
@@ -73,7 +95,7 @@ build: configure
 
 # 显式 clang++ + libc++ 构建
 build-clang:
-    @CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" {{cmake_runner}} "CMake configure (clang/libc++)" -- cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON
+    @CXX_LIBCXX_DEPS_PREFIX="{{justfile_directory()}}/../.deps-libcxx" {{cmake_runner}} "CMake configure (clang/libc++)" -- cmake -S . -B build/clang -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCXX_PREFERRED_COMPILER=clang++ -DCXX_STDLIB=libc++ -DCXX_ENABLE_CCACHE=ON -DCXX_ENABLE_CLANG_FORMAT=ON -DCXX_ENABLE_CLANG_TIDY=ON -DCXX_ENABLE_IWYU=ON
     @{{cmake_runner}} "CMake build (clang/libc++)" -- cmake --build build/clang -j{{jobs}}
     @just ccache-stats
 
@@ -101,6 +123,7 @@ icons:
 check: build
     @if {{cmake_runner}} "CMake list targets" -- cmake --build {{builddir}} --target help | grep -q "tidy-check"; then {{cmake_runner}} "CMake target tidy-check" -- cmake --build {{builddir}} --target tidy-check; else echo "tidy-check skipped (module-only targets)"; fi
     @{{cmake_runner}} "CMake target syntax-check" -- cmake --build {{builddir}} --target syntax-check
+    @if {{cmake_runner}} "CMake list targets" -- cmake --build {{builddir}} --target help | grep -q "iwyu-check"; then {{cmake_runner}} "CMake target iwyu-check" -- cmake --build {{builddir}} --target iwyu-check; else echo "iwyu-check skipped (module-only targets, no plain TUs)"; fi
     @just ccache-stats
 
 # 单元测试：工作区固定写入 tests/.runtime，日志写入 tests/logs
@@ -109,6 +132,13 @@ test:
     @{{cmake_runner}} "CMake configure (tests)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
     @{{cmake_runner}} "CMake build tests" -- cmake --build {{builddir}} --target static_modules_tests -j{{jobs}}
     set -o pipefail; ctest --test-dir {{builddir}} -j{{jobs}} --output-on-failure 2>&1 | tee tests/logs/unit-tests.log
+    @just ccache-stats
+
+# Debug 构建：编译 main 与单元测试，并启用 Algorithms_Study 学习模块（引用 Conan 依赖库）。
+# 依赖库通过 `just conan` 一次性安装并缓存，此处不重复下载。
+debug:
+    @{{cmake_runner}} "CMake configure (debug)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_GTEST=ON
+    @{{cmake_runner}} "CMake build (debug)" -- cmake --build {{builddir}} -j{{jobs}}
     @just ccache-stats
 
 # CTest 并行执行 + 并发测试
@@ -146,17 +176,50 @@ smoke: build
     @./build/Stacks_Tools boards
     @echo "smoke ok"
 
-# 注释文档生成：clang-doc 读 compile_commands，Doxygen 使用 DESIGN_DOC 作为主页。
+# 注释文档生成：默认 test（Debug 全模块，含 Algorithms_Study）+ release 双版本。
 docs:
-    @{{cmake_runner}} "CMake configure (docs)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON
-    @{{cmake_runner}} "CMake build docs" -- cmake --build {{builddir}} --target docs
+    @{{cmake_runner}} "CMake configure (docs-test)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_DOC_VERSION=test -DCXX_ENABLE_GTEST=ON
+    @{{cmake_runner}} "CMake build docs-test" -- cmake --build {{builddir}} --target docs
+    @{{cmake_runner}} "CMake configure (docs-release)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_DOC_VERSION=release
+    @{{cmake_runner}} "CMake build docs-release" -- cmake --build {{builddir}} --target docs
+    @bash "{{justfile_directory()}}/cmake/report_docs_links.sh" "{{builddir}}"
+
+# 仅生成 Doxygen 主文档（单版本，默认 test 全模块）
+doxygen:
+    @{{cmake_runner}} "CMake configure (doxygen)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_DOC_VERSION=test
+    @{{cmake_runner}} "CMake build doxygen" -- cmake --build {{builddir}} --target docs-doxygen
     @bash "{{justfile_directory()}}/cmake/report_docs_links.sh" "{{builddir}}"
 
 # C++ 函数调用/被调用关系图
 uml:
-    @{{cmake_runner}} "CMake configure (UML docs)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON
+    @{{cmake_runner}} "CMake configure (UML docs)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_DOC_VERSION=release
     @{{cmake_runner}} "CMake build docs-doxygen" -- cmake --build {{builddir}} --target docs-doxygen
-    @printf '\033[1;33m\n函数调用关系图：%s/%s/docs/doxygen/html/index.html\033[0m\n' "{{justfile_directory()}}" "{{builddir}}"
+    @printf '\033[1;33m\n函数调用关系图：%s/%s/docs/doxygen/release/html/index.html\033[0m\n' "{{justfile_directory()}}" "{{builddir}}"
+
+# Sphinx + Breathe + Exhale 现代化文档站（首次运行会在 build/docs-venv 建虚拟环境）
+docs-sphinx:
+    @command -v python3 >/dev/null 2>&1 || { echo "missing python3"; exit 1; }
+    @test -x {{docs_venv}}/bin/sphinx-build || { echo "creating docs venv..."; python3 -m venv {{docs_venv}}; {{docs_venv}}/bin/pip install --quiet sphinx breathe exhale; }
+    @{{cmake_runner}} "CMake configure (docs)" -- cmake -S . -B {{builddir}} -G Ninja -DCMAKE_BUILD_TYPE=Debug {{toolchain_flags}} -DCXX_ENABLE_DOCS=ON -DCXX_DOC_VERSION=test
+    @doxygen "{{builddir}}/docs/Doxyfile"
+    @{{docs_venv}}/bin/sphinx-build -b html docs/sphinx "{{builddir}}/docs/sphinx"
+    @printf '\033[1;33m\nSphinx 文档：%s/%s/docs/sphinx/index.html\033[0m\n' "{{justfile_directory()}}" "{{builddir}}"
+
+# SonarQube 本地静态分析（仅本地，不连接服务器/云端）
+sonar:
+    @command -v sonar >/dev/null 2>&1 || { echo "missing sonar — brew install --cask sonarqube-cli"; exit 1; }
+    @sonar analyze --force
+
+# CodeQL 静态分析（注意：CodeQL C++ 提取器不支持 C++20/26 模块工程）
+codeql:
+    @command -v codeql >/dev/null 2>&1 || { echo "missing codeql — brew install codeql"; exit 1; }
+    @if find modules src tests -name '*.cppm' -print -quit 2>/dev/null | grep -q .; then \
+        echo "CodeQL 的 C++ 提取器暂不支持 C++20/26 模块（.cppm / import std）。"; \
+        echo "本项目是纯模块工程，请改用 just sonar（本地）或 clang-tidy / scan-build。"; \
+        exit 1; \
+      fi
+    @CCACHE_DISABLE=1 codeql database create build/codeql-db --language=cpp --overwrite --command="cmake --build {{builddir}} --clean-first -j{{jobs}}"
+    @codeql database analyze build/codeql-db --download --format=sarif-latest --output=build/codeql-results.sarif codeql/cpp-queries
 
 # 本地 CI 复现（功能等价于原模板 workflow 矩阵入口）
 local-ci: fmt

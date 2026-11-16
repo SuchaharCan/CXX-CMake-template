@@ -83,8 +83,10 @@ macOS + CMake 4.5+ + Ninja + Clang 23+ + C++26 + libc++。
 
 ```bash
 just doctor
+just conan
 just build
 just test
+just debug
 just mutation-test
 just real-data-smoke "/path/to/StacksLibrary"
 just smoke
@@ -92,12 +94,101 @@ just smoke
 
 所有完整 `just` 命令可用 `just --list` 查看，包括：
 
-- `configure`、`build`、`build-clang`、`release-binary`、`fmt`、`check`
+- `conan`、`configure`、`build`、`build-clang`、`release-binary`、`fmt`、`check`
 - `test`、`parallel-test`、`mutation-test`、`real-data-smoke`、`smoke`
+- `debug`（Debug 构建 + Algorithms_Study 学习模块）
 - `install-layout-test`
-- `docs`、`uml`、`local-ci`
+- `docs`、`docs-sphinx`、`uml`、`local-ci`
+- `sonar`、`codeql`
 - `package`、`install`、`verify-install`、`verify-data`
 - `env`、`doctor`、`ccache-stats`、`clean`
+
+第三方库由 Conan 2 锁定版本：`conanfile.txt` 声明 boost / abseil /
+nlohmann-json / asio / eigen / sqlite_orm / opencv / gtest，`just conan` 一次性
+安装并缓存（重库仅取核心组件，已缓存的包不会重复下载）。JSON 已从旧 `json.hpp`
+切换为 Conan 的 nlohmann-json。`Algorithms_Study` 是仅 Debug 编译的学习模块，
+按库独立 gating 地把这些依赖封装成模块；缺失的重库不会影响主构建与测试。
+
+## 技术路线图（工具矩阵）
+
+状态图例：✅ 默认启用 / ⚙️ 可选开关（需 preset 或 `-D` 开启）/ 🔧 建议补充 / ❌ 未纳入或本机不适用。
+
+| 类别 | 工具 / 方案 | 状态 | 本项目入口与说明 |
+| --- | --- | --- | --- |
+| 构建 | CMake ≥ 4.5 | ✅ | `cmake_minimum_required(4.5.0)` |
+| 构建 | Ninja | ✅ | `00_core_compiler.cmake` 强制，非 Ninja 直接报错 |
+| 构建 | CMake Presets | ✅ | 9 个 configure / build preset |
+| 构建 | compile_commands.json | ✅ | `CMAKE_EXPORT_COMPILE_COMMANDS=ON` |
+| 构建 | ccache | ✅ | `90_opt_ccache.cmake`，缓存 `build/.ccache` |
+| 构建 | just 任务编排 | ✅ | `justfile`，`just --list` 查看全部命令 |
+| 构建 | Conan 2（版本锁定） | ✅ | `conanfile.txt` + `just conan`；8 个依赖重库取核心组件 |
+| 构建 | 独立学习模块 Algorithms_Study | ✅ | 仅 Debug；把 Conan 依赖库封装为模块并注入 main/单测 |
+| 质量 | clang-format | ✅ | `just fmt` + PRE_BUILD gate + `syntax-check` |
+| 质量 | clang-tidy | ✅ | compile-attach + `tidy-check`；纯模块 TU 受限，见下方说明 |
+| 质量 | 编译器警告矩阵 | ✅ | `-Wall -Wextra -Wpedantic` 等探测注入 |
+| 质量 | clangd | ✅ | `.clangd` 语言服务器 |
+| 质量 | IWYU | ✅ | `94_opt_iwyu.cmake`，本次改为默认开启，仅覆盖非模块 TU |
+| 质量 | include-cleaner | ⚙️ | `94_opt_include_cleaner.cmake`，`iwyu` preset 开启 |
+| 质量 | cppcheck | 🔧 | 与 clang-tidy 互补的第二静态分析器 |
+| 质量 | SonarQube CLI / CodeQL | ✅ | `just sonar` / `just codeql`；CI 已接入 |
+| 测试 | GoogleTest | ✅ | `90_opt_gtest.cmake`，`just test` |
+| 测试 | CTest | ✅ | `enable_testing()`，统一跑单测 |
+| 测试 | 变异测试 | ✅ | `just mutation-test`（当前 4/4 killed） |
+| 测试 | RapidCheck 属性测试 | ⚙️ | `97_opt_rapidcheck.cmake`，默认探测、缺失自动跳过 |
+| 测试 | Google Benchmark | ⚙️ | `93_opt_benchmark.cmake`，`run-bench` |
+| 测试 | libFuzzer | ⚙️ | `93_opt_fuzz.cmake`，`fuzz` preset，`run-fuzz` |
+| 测试 | 覆盖率 llvm-cov | ⚙️ | `91_opt_coverage.cmake`，`coverage` preset |
+| 测试 | ASan / UBSan | ⚙️ | `91_opt_sanitizers.cmake`，`debug` preset |
+| 测试 | TSan | ⚠️ | `tsan` preset；Apple Silicon 不可用，见下方约束 |
+| 测试 | 烟测矩阵 | ✅ | smoke / real-data-smoke / install-layout / applescript / package-first-run |
+| 文档 | Doxygen + doxygen-awesome-css | ✅ | `92_opt_docs.cmake`，`just docs` |
+| 文档 | clang-doc（LLVM） | ✅ | `docs-clangdoc`，读 compile_commands |
+| 文档 | Sphinx + Breathe + Exhale | ⚙️ | `just docs-sphinx`，Doxygen XML → 现代文档站 |
+| 文档 | 设计 / 接口文档 | ✅ | `docs/DESIGN_DOC.md`、`docs/BUSINESS_API.md`、`debug.md` |
+| 调试 | LLDB | ✅ | `debug.md`，含三个可复现实验 |
+| 调试 | bqlog 模块日志 + trace | ✅ | `log/`，Alfred Debug 开关联动 |
+| 性能 | lld 链接器 | ⚙️ | `96_opt_linker.cmake`，`release` preset 默认开启 |
+| 性能 | mimalloc / jemalloc | ⚙️ | `96_opt_allocator.cmake` |
+| 性能 | ThinLTO + 符号剥离 | ✅ | `just release-binary`（-Os + ThinLTO + dead_strip） |
+| 性能 | Tracy / Instruments | 🔧 | 本机剖析补充，Tracy 近零开销 |
+| 协作 | GitHub Actions CI 矩阵 | ✅ | `template-matrix.yml` + `docs-pages.yml` + `codeql.yml` |
+| 协作 | pre-commit + reviewdog / Danger | 🔧 | 提交前门禁与 PR 自动贴评论 |
+| 协作 | Dependabot / Renovate | 🔧 | 依赖自动更新 |
+
+关于 clang-tidy / IWYU 的模块限制：本项目是纯 C++26 模块工程，所有目标都标记为
+`CXX_MODULE_TARGET`。clang-tidy 与 IWYU 目前无法解析模块接口（`.cppm` / `@modmap`），
+因此编译期 attach 会对模块目标跳过，`tidy-check` / `iwyu-check` 只扫描非模块 TU
+（当前项目没有非模块 TU，所以 `just check` 里显示 skipped）。clang-format 不受影响，
+对所有源文件生效。将来新增 `.cpp` / `.hpp` 普通 TU 时，把路径登记进
+`CXX_TIDY_PLAIN_SOURCES` 即可让 tidy / IWYU 自动覆盖。
+
+### Mac-ARM64 精准约束：未纳入与替代方案
+
+本机为 Apple Silicon（arm64）+ Homebrew LLVM 23.1.5 + libc++ + C++26 模块。在
+这一约束下，一批 Linux / Intel Mac 常用工具无法直接使用，项目已用等价方案替代：
+
+| 不可用方案 | 原因 | 本机替代 |
+| --- | --- | --- |
+| valgrind | 不支持 Apple Silicon | ASan / LSan + `leaks` + Instruments |
+| gdb | macOS 无原生 gdb | LLDB（项目已采用） |
+| rr | 仅 Linux | LLDB + ASan/UBSan 复现偶发 bug |
+| heaptrack | 仅 Linux | Instruments Allocations / `malloc_history` |
+| perf | 仅 Linux | `sample` / Instruments Time Profiler |
+| mold | 不支持 macOS | lld（`CXX_USE_LLD=ON`） |
+| MemorySanitizer | Clang MSan 不支持 macOS | ASan + UBSan |
+| ThreadSanitizer | Apple Silicon 无可用运行时 | ASan + 并发单元测试 + 代码审查；`tsan` preset 保留给 Intel Mac / Linux |
+| GCC 工具链 | 模板强制 clang++ + libc++ | gprof / gcov / `-fanalyzer` 不适用，用 llvm-cov / lld |
+| OSS-Fuzz 云端 | 容器 / Linux 环境 | 本地 libFuzzer（`fuzz` preset）已覆盖 |
+
+在 arm64 上可直接补充、且与现有体系契合的方向：
+
+- 依赖可复现：已由 Conan 2 承担（`conanfile.txt` 锁定 8 个依赖版本），brew 仅保留构建工具与 bqlog。
+- 远端 CI：已更新 `template-matrix.yml` / `docs-pages.yml` 并新增 `codeql.yml`；SonarQube 分析在配置 `SONAR_HOST_URL` / `SONAR_TOKEN` 后自动启用。
+- 第二静态分析器：`brew install cppcheck`，与 clang-tidy 形成互补。
+- 提交门禁：pre-commit + `.editorconfig`，把 `just fmt` 与语法检查前置到 commit 前。
+- 性能剖析：Tracy（近零开销、可选）或系统自带 Instruments，覆盖 `just release-binary` 之外的性能回归。
+- 工程文件格式化：cmake-format / gersemi，对 `CMakeLists.txt` 与 `cmake/*.cmake` 本身做统一排版。
+- Mock 支持：需要隔离依赖时引入 trompeloeil。
 
 ## Alfred 使用
 

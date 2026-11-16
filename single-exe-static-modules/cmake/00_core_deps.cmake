@@ -69,6 +69,11 @@ endfunction()
 function(cxx_deps_detect)
   cxx_sep("依赖检测")
 
+  # Conan 锁定的第三方库（nlohmann_json 必选；其余按需探测）
+  if(COMMAND cxx_conan_detect)
+    cxx_conan_detect()
+  endif()
+
   # cmake
   cxx_version_at_least("${CMAKE_VERSION}" "${CXX_MIN_CMAKE}" _ok)
   if(_ok)

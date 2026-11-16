@@ -2,7 +2,7 @@
 # 设计文档（DESIGN_DOC.md）作为 HTML 主页。
 PROJECT_NAME           = "@PROJECT_NAME@"
 PROJECT_NUMBER         = "@PROJECT_VERSION@"
-OUTPUT_DIRECTORY       = "@CMAKE_BINARY_DIR@/docs/doxygen"
+OUTPUT_DIRECTORY       = "@CMAKE_BINARY_DIR@/docs/doxygen/@CXX_DOC_VERSION@"
 INPUT                  = "@CMAKE_SOURCE_DIR@/src" \
                          "@CMAKE_SOURCE_DIR@/modules" \
                          "@CMAKE_SOURCE_DIR@/docs" \
@@ -21,7 +21,6 @@ GENERATE_XML           = YES
 XML_OUTPUT             = xml
 QUIET                  = YES
 WARN_IF_UNDOCUMENTED   = NO
-EXCLUDE                = "@CMAKE_SOURCE_DIR@/json.hpp"
 HAVE_DOT               = YES
 DOT_IMAGE_FORMAT       = svg
 DOT_NUM_THREADS        = 8
@@ -29,4 +28,13 @@ DOT_CLEANUP            = NO
 CALL_GRAPH             = YES
 CALLER_GRAPH           = YES
 HTML_OUTPUT            = html
+HTML_EXTRA_STYLESHEET  = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-awesome.css" \
+                         "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-awesome-sidebar-only.css" \
+                         "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/doxygen-custom.css"
+HTML_EXTRA_FILES       = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/version-switcher.js" \
+                         "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/dark-mode.js"
+HTML_HEADER            = "@CMAKE_SOURCE_DIR@/docs/doxygen-awesome/header.html"
+HTML_COLORSTYLE        = TOGGLE
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 335
 USE_MDFILE_AS_MAINPAGE = "@CMAKE_SOURCE_DIR@/docs/DESIGN_DOC.md"

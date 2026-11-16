@@ -1,0 +1,298 @@
+
+.. _file_modules_workflow_ui_include_WorkflowUI.cppm:
+
+File WorkflowUI.cppm
+====================
+
+|exhale_lsh| :ref:`Parent directory <dir_modules_workflow_ui_include>` (``modules/workflow_ui/include``)
+
+.. |exhale_lsh| unicode:: U+021B0 .. UPWARDS ARROW WITH TIP LEFTWARDS
+
+
+.. contents:: Contents
+   :local:
+   :backlinks: none
+
+Definition (``modules/workflow_ui/include/WorkflowUI.cppm``)
+------------------------------------------------------------
+
+
+.. toctree::
+   :maxdepth: 1
+
+   program_listing_file_modules_workflow_ui_include_WorkflowUI.cppm.rst
+
+
+
+
+
+Includes
+--------
+
+
+- ``InterfaceLog`` (:ref:`file_modules_interface_log_include_InterfaceLog.cppm`)
+
+- ``ProjectSync`` (:ref:`file_modules_project_sync_include_ProjectSync.cppm`)
+
+- ``ReminderSync`` (:ref:`file_modules_reminder_sync_include_ReminderSync.cppm`)
+
+- ``TaskManager`` (:ref:`file_modules_task_manager_include_TaskManager.cppm`)
+
+- ``array``
+
+- ``cctype``
+
+- ``cstdint``
+
+- ``cstdio``
+
+- ``cstdlib``
+
+- ``ctime``
+
+- ``filesystem``
+
+- ``fstream``
+
+- ``iomanip``
+
+- ``nlohmann/json.hpp``
+
+- ``sstream``
+
+- ``std``
+
+- ``string``
+
+- ``string_view``
+
+- ``unistd.h``
+
+- ``vector``
+
+
+
+Included By
+-----------
+
+
+- :ref:`file_src_main.cpp`
+
+
+
+
+Namespaces
+----------
+
+
+- :ref:`namespace_WorkflowUI`
+
+- :ref:`namespace_WorkflowUI__anonymous_namespace{WorkflowUI.cppm}`
+
+
+Classes
+-------
+
+
+- :ref:`exhale_struct_struct_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1_1_command_aliases`
+
+- :ref:`exhale_struct_struct_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1_1_parsed_task_input`
+
+- :ref:`exhale_struct_struct_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1_1_utf8_code_point`
+
+- :ref:`exhale_struct_struct_workflow_u_i_1_1_context`
+
+
+Functions
+---------
+
+
+- :ref:`exhale_function_namespace_workflow_u_i_1ae7cb43310a4805165de71a3a39fcd1b8`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aae0df97aaa4371dd361317f2ed3c1cef`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a64cc9285fd59e10eb0d9058c61b4f9ad`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a56bde23aa25c78a697cda2b0a287bb1a`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1abd5fdc99600b071cac4b702aedfa9a5a`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1af649793183952d08b1f3f9345ff68d98`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a646e2ba230443026f519450c94a72ce6`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a9b045382035b2b78bafc5042088641de`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a2a00ee77c46ce96a775885148d16f234`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae15623c60dec8bd6821f1a49f5c2c875`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa74c47003fef951f8548c63096ea27bf`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8cc1f7d6bce95645c13418d86042f60e`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ab5ca407e82fcb9f15143b0384c28dacc`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8640f530f8196f482cf1634470b66c28`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a075612ddf61cc9e53ec661000eeb7eb3`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a138941a03c69fce37c5b74041c0fd0ef`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa4b3cdd215f2d93a926411ea5a346dd4`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8db76144acdef89517f27f0d4b938780`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a3424f039cbd3e5a95bbe276893af0821`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a17b7c3043d5b497c3ca482344f94e0cc`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a4e13c05525040cd376ceb04b624aab93`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a2988e643ad13157df6cad353590d9ba4`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a0d2c44d6fdd733925d8eac296ee6e2f7`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8d2afa8d35e87c5bd335b89b73e52261`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a876487844f653fad607d2b2d38e7c6bb`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8c3803a37ae7aa4205aa63c21a54c505`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a40aa6ecd63dd8acef761579ad96ee84c`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1af1cd5322173fb0548fff1dad92e3c456`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a3fa87dc226c2cd4db608df4885dccfeb`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aaac9ad8016b517ac7e3222d699abbf86`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ac2a4705d68228de63ada495f6d587fd2`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ad5f1f29b7d42aadeb7290138fa9595ca`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8db17cf1410bc80a6fa6f93614018d2a`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ab815edfb3b98d2ed71a9eccd5e69fdde`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a4a266341d83fc1c645a5a25680bf2fa6`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a4794b1bc66b9a4f0ac0aa525a6000cb1`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1af3722ec7c8f03ba3dcbe5b883228bbf3`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a2ec92c442997226e126f4ca299567c69`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae24c5e73c33a19305181b3852d6be54b`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a657f34141228a5378bd41fdd4fe55daa`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a49e1048977dc8e669e38d4800e993583`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a92e7bce4c138e8e809c682085459303c`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa7012211a2e29403c8f04f6326f28f25`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a3b7949005285fdd89e7487cb0636920b`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a1c938f5c033b8970264b196004b5d958`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a9ef51003eed2eb79233ca82f01debb11`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ad09ce7f6b301c426ef0aad0be19f3835`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a91e6c1ce8a7e5ca46369d4eba434aee0`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a5aa1033e56d7e3e53f2d884bd4dd1b2b`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ac0ccadae9332e47c51d0be4a1db4fde2`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a218d2b8917e4014d4af51fd0e96d61b7`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a32a1ff2252a2105346eb9bd62c36ea34`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa1ddb1a672fdd0a6148fca48e009c238`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a1bd0e650cce062603cdd4ccccb44c2c6`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ad5bb076f69e3f7676f3d4d91f58d067e`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae4814545bd32e0c7ef02e4be4ca3a43f`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a5b0a5ba8ccc8296f53487bc757d38bfe`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a02dfd010e72e3a785a7541022e48e18b`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ac789d7738f39ae013d5bab02da7eb8c8`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a4cc1c8ca766abc1890ee52052f3a1396`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8b32d88386a92c26d41323057f6744d5`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a0e9c6b4676da2f4a0c6811ee2e1f7b15`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a6636a31da2502a04af14616759a9b2b7`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae390439f0768c46df47190aa560bc262`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa91d25d774b73c69db2220b6de737fd6`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae142ddf672782206d241ba468a39803f`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8d2e89fc8d420d240c93a545e8a59d92`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa9a7c889b9365b4d59623521ea2374c4`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1acddfdd406aae6f9cfdb923e137add4e3`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a6225c9d7a57ccfeaa88bdc20a38e473c`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a3151a1ecdf842463b70f1a31fb91bbe6`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a2ca83cbae72f561f8f1f58efcb40ae19`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a8c938c6b06ea4d4889e223cb62c2cd75`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a5457d8ef93a8874cf3b9f24c7cfb11ae`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae4c76ecd9e99a50cb1cac9fa6041fa62`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1abf6a04381280968821bb2d023aed5f24`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a0e9c268298e88e8a6a56049f91b0f29b`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a2001f6262ccf41d2b17ed60ceb5f5dbd`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a89feb7869ef1480c5c267fb3118dda43`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a830e405a8491bd9d0e16d566cc32fa12`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aa6afd271d21e70ae3ec18f4396f78361`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ae5e2b8fe06dd6b641a461cb79b5d90ab`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1aec9e21f316d0e0afa8b87a4cb4db99ca`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a5aa3f2d1b0e98a2d66f5df4cc93a8c4e`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a832085542da9646683e11bdb34388df7`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a36f8c649532085ec0ad9dc4df2aa0115`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1ad0487bba67fc0fe0035be060fd7fa679`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1af4f61c42556abbd4c486fda97bb4fc35`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1a8aa30a73110e8989a7ec362be93dd923`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1ab2c1d22458e869e8d26a7633ac96ec9c`
+
+- :ref:`exhale_function_namespace_workflow_u_i_1ae9db7d312730881cddc8ee21502538dd`
+
+
+Typedefs
+--------
+
+
+- :ref:`exhale_typedef_namespace_workflow_u_i_1_1anonymous__namespace_02_workflow_u_i_8cppm_03_1a60b389bd5bc35babf87b95cc6139aa94`
+

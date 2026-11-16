@@ -11,8 +11,7 @@
 #include <unistd.h>
 
 #include <cstdio>
-
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 import std;
 import InterfaceLog;
@@ -20,6 +19,9 @@ import ProjectSync;
 import ReminderSync;
 import TaskManager;
 import WorkflowUI;
+#ifdef CXX_ALGORITHMS_STUDY
+import AlgorithmsStudy;
+#endif
 
 namespace {
 
@@ -637,6 +639,13 @@ int run_action(const Runtime& runtime, const std::string& token) {
   return static_cast<int>(ExitCode::ok);
 }
 
+#ifdef CXX_ALGORITHMS_STUDY
+/// 仅 Debug 构建：调用学习模块中的 Conan 依赖库示例，验证导入与链接。
+bool run_algorithms_study_selfcheck() {
+  return AlgorithmsStudy::selfcheck() && AlgorithmsStudy::kVersion == 1;
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -653,6 +662,11 @@ int main(int argc, char* argv[]) {
       std::println(std::cerr, "startup failed: {}", *layout_error);
       return static_cast<int>(ExitCode::failed);
     }
+
+#ifdef CXX_ALGORITHMS_STUDY
+    // Debug 自检：不向 stdout 输出，避免污染 Alfred Script Filter JSON。
+    (void)run_algorithms_study_selfcheck();
+#endif
 
     // 阶段 3：按 Alfred 配置启用日志；日志失败只警告，不影响业务命令。
     const bool logging_enabled = environment_flag("STACKS_LOGGING", true);

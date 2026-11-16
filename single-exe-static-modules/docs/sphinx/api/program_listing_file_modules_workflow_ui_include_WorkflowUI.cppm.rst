@@ -1,0 +1,2808 @@
+
+.. _program_listing_file_modules_workflow_ui_include_WorkflowUI.cppm:
+
+Program Listing for File WorkflowUI.cppm
+========================================
+
+|exhale_lsh| :ref:`Return to documentation for file <file_modules_workflow_ui_include_WorkflowUI.cppm>` (``modules/workflow_ui/include/WorkflowUI.cppm``)
+
+.. |exhale_lsh| unicode:: U+021B0 .. UPWARDS ARROW WITH TIP LEFTWARDS
+
+.. code-block:: cpp
+
+   
+   module;
+   
+   #include <unistd.h>
+   
+   #include <array>
+   #include <cctype>
+   #include <cstdint>
+   #include <cstdio>
+   #include <cstdlib>
+   #include <ctime>
+   #include <filesystem>
+   #include <fstream>
+   #include <iomanip>
+   #include <nlohmann/json.hpp>
+   #include <sstream>
+   #include <string>
+   #include <string_view>
+   #include <vector>
+   
+   export module WorkflowUI;
+   
+   import std;
+   import InterfaceLog;
+   import ProjectSync;
+   import ReminderSync;
+   import TaskManager;
+   
+   export namespace WorkflowUI {
+   
+   struct Context {
+     std::filesystem::path workflow_dir;                  
+     TaskManager::DatabasePaths databases;                
+     std::optional<std::filesystem::path> inbox_library;  
+   };
+   
+   std::string filter(const Context& context, std::string_view query);
+   
+   std::expected<std::string, std::string> action(const Context& context, std::string_view token);
+   
+   std::string base64url_encode(std::string_view value);
+   
+   std::optional<std::string> base64url_decode(std::string_view value);
+   
+   }  // namespace WorkflowUI
+   
+   namespace WorkflowUI {
+   
+   namespace {
+   
+   namespace fs = std::filesystem;
+   using json = nlohmann::json;
+   
+   // ---- 通用文本与图标工具 ---------------------------------------------------
+   
+   std::string trim(std::string value) {
+     const auto not_space = [](unsigned char character) { return !std::isspace(character); };
+     value.erase(value.begin(), std::ranges::find_if(value, not_space));
+     value.erase(std::ranges::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+     return value;
+   }
+   
+   std::string alias_from_env(std::string_view variable, std::string_view fallback);
+   
+   struct Utf8CodePoint {
+     char32_t value;
+     std::size_t bytes;
+   };
+   
+   Utf8CodePoint decode_utf8(std::string_view text, std::size_t offset) {
+     const auto first = static_cast<unsigned char>(text[offset]);
+     const auto continuation = [](unsigned char byte) { return (byte & 0xC0U) == 0x80U; };
+     if ((first & 0x80U) == 0U) {
+       return {.value = static_cast<char32_t>(first), .bytes = 1};
+     }
+     if ((first & 0xE0U) == 0xC0U && offset + 1 < text.size()) {
+       const auto second = static_cast<unsigned char>(text[offset + 1]);
+       if (continuation(second)) {
+         const auto value =
+             (static_cast<char32_t>(first & 0x1FU) << 6U) | static_cast<char32_t>(second & 0x3FU);
+         return {.value = value, .bytes = 2};
+       }
+     }
+     if ((first & 0xF0U) == 0xE0U && offset + 2 < text.size()) {
+       const auto second = static_cast<unsigned char>(text[offset + 1]);
+       const auto third = static_cast<unsigned char>(text[offset + 2]);
+       if (continuation(second) && continuation(third)) {
+         const auto value = (static_cast<char32_t>(first & 0x0FU) << 12U) |
+                            (static_cast<char32_t>(second & 0x3FU) << 6U) |
+                            static_cast<char32_t>(third & 0x3FU);
+         return {.value = value, .bytes = 3};
+       }
+     }
+     if ((first & 0xF8U) == 0xF0U && offset + 3 < text.size()) {
+       const auto second = static_cast<unsigned char>(text[offset + 1]);
+       const auto third = static_cast<unsigned char>(text[offset + 2]);
+       const auto fourth = static_cast<unsigned char>(text[offset + 3]);
+       if (continuation(second) && continuation(third) && continuation(fourth)) {
+         const auto value = (static_cast<char32_t>(first & 0x07U) << 18U) |
+                            (static_cast<char32_t>(second & 0x3FU) << 12U) |
+                            (static_cast<char32_t>(third & 0x3FU) << 6U) |
+                            static_cast<char32_t>(fourth & 0x3FU);
+         return {.value = value, .bytes = 4};
+       }
+     }
+     return {.value = static_cast<char32_t>(first), .bytes = 1};
+   }
+   
+   char32_t normalize_delimiter_codepoint(char32_t value) {
+     if (value >= 0xFF01 && value <= 0xFF5E) {
+       return value - 0xFEE0;
+     }
+     if (value == 0x3000) {
+       return 0x20;
+     }
+     if (value == 0x3001) {
+       return 0x2C;
+     }
+     if (value == 0x3002) {
+       return 0x2E;
+     }
+     return value;
+   }
+   
+   std::vector<char32_t> field_delimiter_codepoints() {
+     std::string configured = alias_from_env("STACKS_DELIMITER", "");
+     if (configured.empty()) {
+       configured = alias_from_env("Stacks__delimiter", "|");
+     }
+     std::vector<char32_t> result;
+     for (std::size_t offset = 0; offset < configured.size();) {
+       const Utf8CodePoint decoded = decode_utf8(configured, offset);
+       result.push_back(decoded.value);
+       offset += decoded.bytes;
+     }
+     return result.empty() ? std::vector<char32_t>{0x7C} : result;
+   }
+   
+   std::size_t field_delimiter_length_at(std::string_view text, std::size_t offset,
+                                         const std::vector<char32_t>& delimiter) {
+     std::size_t cursor = offset;
+     for (const char32_t expected : delimiter) {
+       if (cursor >= text.size()) {
+         return 0;
+       }
+       const Utf8CodePoint actual = decode_utf8(text, cursor);
+       if (normalize_delimiter_codepoint(actual.value) != normalize_delimiter_codepoint(expected)) {
+         return 0;
+       }
+       cursor += actual.bytes;
+     }
+     return cursor - offset;
+   }
+   
+   std::pair<std::string, std::string> split_first(std::string_view value, char separator) {
+     const auto position = value.find(separator);
+     if (position == std::string_view::npos) {
+       return {std::string(value), std::string{}};
+     }
+     return {std::string(value.substr(0, position)), std::string(value.substr(position + 1))};
+   }
+   
+   std::string handle_sentinel_from_env() {
+     return alias_from_env("STACKS_HANDLE_SENTINEL", "✅");
+   }
+   
+   std::string clean_handle_token(std::string_view token) {
+     std::string value = trim(std::string(token));
+     const std::size_t separator = value.find(' ');
+     if (separator != std::string::npos) {
+       value = trim(value.substr(0, separator));
+     }
+     return value;
+   }
+   
+   std::string strip_input_sentinel(std::string_view value) {
+     std::string result = trim(std::string(value));
+     const std::string sentinel = handle_sentinel_from_env();
+     if (result == sentinel) {
+       return {};
+     }
+     if (result.starts_with(sentinel)) {
+       result = trim(result.substr(sentinel.size()));
+     }
+     return result;
+   }
+   
+   std::string handle_query(std::string_view kind, std::string_view handle) {
+     return std::format("{}:{} {} ", kind, handle, handle_sentinel_from_env());
+   }
+   
+   std::string icon_path(const Context& context) {
+     const fs::path path = context.workflow_dir / "icons" / "icon.png";
+     return path.string();
+   }
+   
+   std::string system_icon(std::string_view name) {
+     return (fs::path("/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources") /
+             std::string(name))
+         .string();
+   }
+   
+   std::string app_icon(std::string_view app, std::string_view icon) {
+     return (fs::path("/System/Applications") / std::string(app) / "Contents/Resources" /
+             std::string(icon))
+         .string();
+   }
+   
+   std::string bilingual(std::string_view chinese, std::string_view english) {
+     return std::format("{} / {}", chinese, english);
+   }
+   
+   std::string alias_from_env(std::string_view variable, std::string_view fallback) {
+     const std::string key(variable);
+     if (const char* value = std::getenv(key.c_str()); value != nullptr && *value != '\0') {
+       std::string cleaned = trim(value);
+       if (!cleaned.empty()) {
+         return cleaned;
+       }
+     }
+     return std::string(fallback);
+   }
+   
+   bool flag_from_env(std::string_view variable) {
+     const std::string key(variable);
+     const char* value = std::getenv(key.c_str());
+     if (value == nullptr || *value == '\0') {
+       return false;
+     }
+     std::string normalized(value);
+     std::ranges::transform(normalized, normalized.begin(), [](unsigned char character) {
+       return static_cast<char>(std::tolower(character));
+     });
+     normalized = trim(std::move(normalized));
+     return normalized != "0" && normalized != "false" && normalized != "off" &&
+            normalized != "unchecked";
+   }
+   
+   bool include_completed_archived_from_env() {
+     return flag_from_env("STACKS_INCLUDE_DONE_ARCHIVED");
+   }
+   
+   void apply_task_visibility(TaskManager::TaskListOptions& options) {
+     const bool include = include_completed_archived_from_env();
+     options.include_done = include;
+     options.include_archived = include;
+   }
+   
+   struct CommandAliases {
+     std::string add_path = alias_from_env("STACKS_ALIAS_ADD_PATH", "ap");  
+     std::string reload = alias_from_env("STACKS_ALIAS_RELOAD", "rl");      
+     std::string config = alias_from_env("STACKS_ALIAS_CONFIG", "cf");      
+     std::string view = alias_from_env("STACKS_ALIAS_VIEW", "v");           
+     std::string tasks = alias_from_env("STACKS_ALIAS_TASKS", "t");         
+     std::string week = alias_from_env("STACKS_ALIAS_WEEK", "w");           
+     std::string timers = alias_from_env("STACKS_ALIAS_TIMERS", "tm");      
+     std::string inbox = alias_from_env("STACKS_ALIAS_INBOX", "i");         
+     std::string default_inbox = alias_from_env("STACKS_ALIAS_DEFAULT_INBOX", "di");  
+     std::string pin = alias_from_env("STACKS_ALIAS_PIN", "pin");  
+   };
+   
+   std::string icon_project() {
+     return "icons/project.png";
+   }
+   std::string icon_stack() {
+     return "icons/board.png";
+   }
+   std::string icon_task() {
+     return "icons/task.png";
+   }
+   std::string icon_inbox() {
+     return "icons/inbox.png";
+   }
+   std::string icon_week() {
+     return app_icon("Calendar.app", "AppIcon.icns");
+   }
+   std::string icon_timer() {
+     return app_icon("Clock.app", "AppIcon.icns");
+   }
+   std::string icon_sync() {
+     return system_icon("Sync.icns");
+   }
+   std::string icon_info() {
+     return system_icon("ToolbarInfo.icns");
+   }
+   std::string icon_note() {
+     return "icons/note.png";
+   }
+   
+   std::string priority_label(std::string_view value) {
+     if (value == "low") {
+       return "低";
+     }
+     if (value == "medium") {
+       return "中";
+     }
+     if (value == "high") {
+       return "高";
+     }
+     if (value == "critical") {
+       return "紧急";
+     }
+     return value.empty() ? "无" : std::string(value);
+   }
+   
+   bool application_installed(const std::vector<fs::path>& candidates) {
+     for (const auto& path : candidates) {
+       std::error_code error;
+       if (fs::is_directory(path, error)) {
+         return true;
+       }
+     }
+     return false;
+   }
+   
+   bool calendar_app_installed() {
+     if (flag_from_env("STACKS_TEST_HIDE_CALENDAR")) {
+       return false;
+     }
+     return application_installed({"/System/Applications/Calendar.app", "/Applications/Calendar.app"});
+   }
+   
+   bool reminders_app_installed() {
+     if (flag_from_env("STACKS_TEST_HIDE_REMINDERS")) {
+       return false;
+     }
+     return application_installed(
+         {"/System/Applications/Reminders.app", "/Applications/Reminders.app"});
+   }
+   
+   bool omnifocus_app_installed() {
+     if (flag_from_env("STACKS_TEST_HIDE_OMNIFOCUS")) {
+       return false;
+     }
+     for (const fs::path root : {fs::path("/Applications"), fs::path("/System/Applications")}) {
+       std::error_code error;
+       fs::directory_iterator iterator(root, error);
+       if (error) {
+         continue;
+       }
+       for (const auto& entry : iterator) {
+         if (entry.is_directory() && entry.path().filename().string().starts_with("OmniFocus")) {
+           return true;
+         }
+       }
+     }
+     if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0') {
+       std::error_code error;
+       fs::directory_iterator iterator(fs::path(home) / "Applications", error);
+       if (!error) {
+         for (const auto& entry : iterator) {
+           if (entry.is_directory() && entry.path().filename().string().starts_with("OmniFocus")) {
+             return true;
+           }
+         }
+       }
+     }
+     return false;
+   }
+   
+   int calendar_duration_minutes() {
+     const std::string value = alias_from_env("STACKS_CALENDAR_DURATION", "30");
+     int minutes = 30;
+     try {
+       const int parsed = std::stoi(trim(value));
+       minutes = std::clamp(parsed, 1, 720);
+     } catch (const std::exception&) {
+     }
+     return minutes;
+   }
+   
+   std::string escape_apple_string(std::string_view value) {
+     std::string result;
+     result.reserve(value.size() + 8);
+     for (const char character : value) {
+       switch (character) {
+         case '\\':
+           result += "\\\\";
+           break;
+         case '"':
+           result += "\\\"";
+           break;
+         case '\n':
+           result += "\\n";
+           break;
+         case '\r':
+           result += "\\r";
+           break;
+         case '\t':
+           result += "\\t";
+           break;
+         default:
+           result += character;
+           break;
+       }
+     }
+     return result;
+   }
+   
+   std::optional<std::string> run_osascript(std::string_view script) {
+     std::error_code error;
+     const fs::path script_path =
+         fs::temp_directory_path(error) /
+         std::format(".stacks-calendar-{}-{}.applescript", ::getpid(),
+                     std::chrono::steady_clock::now().time_since_epoch().count());
+     {
+       std::ofstream output(script_path, std::ios::binary | std::ios::trunc);
+       if (!output) {
+         return std::nullopt;
+       }
+       output << script;
+       output.flush();
+       if (!output) {
+         fs::remove(script_path, error);
+         return std::nullopt;
+       }
+     }
+     FILE* pipe = ::popen(std::format("/usr/bin/osascript {}", script_path.string()).c_str(), "r");
+     if (pipe == nullptr) {
+       fs::remove(script_path, error);
+       return std::nullopt;
+     }
+     std::string result;
+     char buffer[512];
+     while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+       result += buffer;
+     }
+     const int status = ::pclose(pipe);
+     fs::remove(script_path, error);
+     if (status != 0) {
+       return std::nullopt;
+     }
+     return trim(std::move(result));
+   }
+   
+   std::optional<bool> calendar_window_override() {
+     const std::string value = trim(alias_from_env("STACKS_CALENDAR_TEST_WINDOW", ""));
+     if (value == "free") {
+       return true;
+     }
+     if (value == "occupied") {
+       return false;
+     }
+     return std::nullopt;
+   }
+   
+   json load_timer_db(const Context& context) {
+     std::ifstream input(context.databases.timer_db, std::ios::binary);
+     json value;
+     try {
+       if (input >> value && value.is_object()) {
+         return value;
+       }
+     } catch (const std::exception&) {
+     }
+     return json::object();
+   }
+   
+   bool save_timer_db(const Context& context, const json& value) {
+     const fs::path target = context.databases.timer_db;
+     std::error_code error;
+     fs::create_directories(target.parent_path(), error);
+     if (error) {
+       return false;
+     }
+     const fs::path temporary =
+         target.parent_path() /
+         std::format(".{}.tmp.{}.{}", target.filename().string(), ::getpid(),
+                     std::chrono::steady_clock::now().time_since_epoch().count());
+     {
+       std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+       if (!output) {
+         return false;
+       }
+       output << value.dump(2) << '\n';
+       output.flush();
+       if (!output) {
+         fs::remove(temporary, error);
+         return false;
+       }
+     }
+     fs::rename(temporary, target, error);
+     if (error) {
+       fs::remove(temporary, error);
+       return false;
+     }
+     return true;
+   }
+   
+   std::string format_local_datetime_now() {
+     const std::time_t now = std::time(nullptr);
+     std::tm local{};
+     ::localtime_r(&now, &local);
+     std::ostringstream output;
+     output << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
+     return output.str();
+   }
+   
+   std::optional<std::chrono::system_clock::time_point> parse_local_datetime(std::string_view value) {
+     std::tm parsed{};
+     std::istringstream input{std::string(value)};
+     input >> std::get_time(&parsed, "%Y-%m-%d %H:%M:%S");
+     if (input.fail()) {
+       return std::nullopt;
+     }
+     const std::time_t timestamp = std::mktime(&parsed);
+     if (timestamp == static_cast<std::time_t>(-1)) {
+       return std::nullopt;
+     }
+     return std::chrono::system_clock::from_time_t(timestamp);
+   }
+   
+   bool calendar_window_free(const Context& context) {
+     if (!calendar_app_installed()) {
+       return false;
+     }
+     if (const auto override = calendar_window_override()) {
+       return *override;
+     }
+     const json timers = load_timer_db(context);
+     if (!timers.contains("last_calendar_insert") || !timers["last_calendar_insert"].is_string()) {
+       return true;
+     }
+     const auto last_insert = parse_local_datetime(timers["last_calendar_insert"].get<std::string>());
+     if (!last_insert) {
+       return true;
+     }
+     const int minutes = calendar_duration_minutes();
+     return std::chrono::system_clock::now() >= *last_insert + std::chrono::minutes(minutes);
+   }
+   
+   std::expected<std::string, std::string> calendar_insert_event(const Context& context,
+                                                                 std::string_view title,
+                                                                 std::string_view notes) {
+     if (!calendar_app_installed()) {
+       return std::unexpected("未安装苹果日历 / Calendar is not installed");
+     }
+     if (!calendar_window_free(context)) {
+       return std::unexpected(
+           "未来时段已存在来自 Stacks2 的日程，请稍后再试 / A Stacks2 calendar slot is already "
+           "reserved");
+     }
+     const int minutes = calendar_duration_minutes();
+     const std::string script = std::format(
+         "set startDate to (current date)\n"
+         "set endDate to startDate + ({} * minutes)\n"
+         "set targetCal to missing value\n"
+         "tell application \"Calendar\"\n"
+         "\trepeat with cal in calendars\n"
+         "\t\ttry\n"
+         // Calendar 字典中的属性名是 writable；writability 会被下方 try 静默吞掉。
+         "\t\t\tif writable of cal is true then\n"
+         "\t\t\t\tset targetCal to cal\n"
+         "\t\t\t\texit repeat\n"
+         "\t\t\tend if\n"
+         "\t\tend try\n"
+         "\tend repeat\n"
+         "\tif targetCal is missing value then return \"error:no-writable-calendar\"\n"
+         "\tset newEvent to make new event at end of events of targetCal with properties "
+         "{{summary:\"{}\", start date:startDate, end date:endDate, description:\"{}\"}}\n"
+         "\treturn \"created:\" & (uid of newEvent)\n"
+         "end tell\n",
+         minutes, escape_apple_string(title), escape_apple_string(notes));
+     const auto output = run_osascript(script);
+     if (!output) {
+       return std::unexpected("日历日程创建失败 / Failed to create the calendar event");
+     }
+     if (*output == "error:no-writable-calendar") {
+       return std::unexpected(
+           "苹果日历中没有可写日历，请检查日历账户权限 / "
+           "No writable Calendar is available");
+     }
+     if (!output->starts_with("created:")) {
+       return std::unexpected("日历返回了意外结果 / Calendar returned an unexpected result");
+     }
+     // 成功后把“最近一次插入日历”的日期时间写入 Timers.json；详情页只读该值判断窗口。
+     json timers = load_timer_db(context);
+     timers["last_calendar_insert"] = format_local_datetime_now();
+     if (!save_timer_db(context, timers)) {
+       return std::unexpected(
+           "日历日程已创建，但写入 Timers.json 失败 / Calendar event created "
+           "but the slot ledger failed to save");
+     }
+     return *output;
+   }
+   
+   json item(std::string title, std::string subtitle, std::string argument = {},
+             std::string autocomplete = {}, bool valid = true, std::string icon = "icons/icon.png") {
+     json value = {
+         {"title", std::move(title)},
+         {"subtitle", std::move(subtitle)},
+         {"valid", valid},
+         {"icon", {{"path", std::move(icon)}}},
+     };
+     if (!argument.empty()) {
+       value["arg"] = std::move(argument);
+     }
+     if (!autocomplete.empty()) {
+       value["autocomplete"] = std::move(autocomplete);
+     }
+     value["text"] = {{"copy", value["title"]}, {"largetype", value["subtitle"]}};
+     return value;
+   }
+   
+   json error_item(std::string message, std::string subtitle = {}) {
+     const std::string chinese = subtitle.empty() ? std::move(message) : std::move(subtitle);
+     return item("无法完成操作 / Operation failed",
+                 bilingual(chinese, "Open Alfred Debugger to inspect the failure"), "", "", false,
+                 icon_info());
+   }
+   
+   std::string feedback(const json& items) {
+     return json{{"skipknowledge", true}, {"items", items}}.dump();
+   }
+   
+   fs::path ui_state_path(const Context& context) {
+     return context.databases.timer_db.parent_path() / "UiState.json";
+   }
+   
+   json load_ui_state(const Context& context) {
+     json state = {{"handles", json::object()}};
+     std::ifstream input(ui_state_path(context), std::ios::binary);
+     try {
+       json loaded;
+       if (input >> loaded && loaded.is_object()) {
+         state = std::move(loaded);
+       }
+     } catch (const std::exception&) {
+     }
+     if (!state.contains("handles") || !state["handles"].is_object()) {
+       state["handles"] = json::object();
+     }
+     // 单输入框模式不再持久化字段草稿；旧 UiState 中残留的 draft 自动丢弃。
+     state.erase("draft");
+     return state;
+   }
+   
+   bool save_ui_state(const Context& context, const json& state) {
+     const fs::path target = ui_state_path(context);
+     std::error_code error;
+     fs::create_directories(target.parent_path(), error);
+     if (error) {
+       return false;
+     }
+     const fs::path temporary =
+         target.parent_path() /
+         std::format(".{}.tmp.{}.{}", target.filename().string(), ::getpid(),
+                     std::chrono::steady_clock::now().time_since_epoch().count());
+     {
+       std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+       if (!output) {
+         return false;
+       }
+       output << state.dump(2) << '\n';
+       output.flush();
+       if (!output) {
+         fs::remove(temporary, error);
+         return false;
+       }
+     }
+     fs::rename(temporary, target, error);
+     if (error) {
+       fs::remove(temporary, error);
+       return false;
+     }
+     return true;
+   }
+   
+   std::string handle_for(std::string_view kind, std::string_view value) {
+     std::uint64_t hash = 1469598103934665603ULL;
+     for (const char character : kind) {
+       hash ^= static_cast<unsigned char>(character);
+       hash *= 1099511628211ULL;
+     }
+     hash ^= static_cast<unsigned char>(':');
+     hash *= 1099511628211ULL;
+     for (const char character : value) {
+       hash ^= static_cast<unsigned char>(character);
+       hash *= 1099511628211ULL;
+     }
+     return std::format("✅{:08x}", static_cast<std::uint32_t>(hash));
+   }
+   
+   std::string remember_handle(const Context& context, std::string_view kind, std::string_view value) {
+     const std::string short_handle = handle_for(kind, value);
+     json state = load_ui_state(context);
+     state["handles"][std::string(kind)][short_handle] = std::string(value);
+     return save_ui_state(context, state) ? short_handle : std::string(value);
+   }
+   
+   std::optional<std::string> resolve_handle(const Context& context, std::string_view kind,
+                                             std::string_view token) {
+     const std::string normalized = clean_handle_token(token);
+     if (!normalized.starts_with("✅")) {
+       return normalized.empty() ? std::nullopt : std::optional<std::string>(normalized);
+     }
+     const json state = load_ui_state(context);
+     if (!state["handles"].contains(std::string(kind))) {
+       return std::nullopt;
+     }
+     const json& values = state["handles"][std::string(kind)];
+     if (!values.is_object() || !values.contains(normalized) || !values[normalized].is_string()) {
+       return std::nullopt;
+     }
+     return values[normalized].get<std::string>();
+   }
+   
+   fs::path normalized_ui_path(const fs::path& value) {
+     std::error_code error;
+     const fs::path canonical = fs::weakly_canonical(value, error);
+     return error ? fs::absolute(value, error).lexically_normal() : canonical;
+   }
+   
+   std::string workspace_handle(const Context& context, const fs::path& path) {
+     return remember_handle(context, "workspace", normalized_ui_path(path).string());
+   }
+   
+   std::optional<fs::path> resolve_workspace(const Context& context, std::string_view token) {
+     std::string normalized = trim(std::string(token));
+     if (normalized.starts_with("✅")) {
+       normalized = clean_handle_token(normalized);
+     }
+     if (normalized.empty()) {
+       return std::nullopt;
+     }
+     if (normalized.starts_with("✅")) {
+       const auto value = resolve_handle(context, "workspace", normalized);
+       return value ? std::optional<fs::path>(normalized_ui_path(*value)) : std::nullopt;
+     }
+     if (const auto legacy = base64url_decode(normalized);
+         legacy && !legacy->empty() && fs::path(*legacy).is_absolute()) {
+       return normalized_ui_path(*legacy);
+     }
+     const fs::path raw(normalized);
+     return raw.is_absolute() ? std::optional<fs::path>(normalized_ui_path(raw)) : std::nullopt;
+   }
+   
+   std::optional<fs::path> default_inbox_path(const Context& context) {
+     const json state = load_ui_state(context);
+     if (!state.contains("default_inbox") || !state["default_inbox"].is_string()) {
+       return std::nullopt;
+     }
+     return normalized_ui_path(state["default_inbox"].get<std::string>());
+   }
+   
+   bool save_default_inbox(const Context& context, const std::optional<fs::path>& path) {
+     json state = load_ui_state(context);
+     if (path) {
+       state["default_inbox"] = normalized_ui_path(*path).string();
+     } else {
+       state.erase("default_inbox");
+     }
+     return save_ui_state(context, state);
+   }
+   
+   std::vector<std::string> pinned_board_ids(const Context& context) {
+     std::vector<std::string> result;
+     const json state = load_ui_state(context);
+     if (!state.contains("pinned_boards") || !state["pinned_boards"].is_array()) {
+       return result;
+     }
+     for (const auto& value : state["pinned_boards"]) {
+       if (value.is_string() && !value.get<std::string>().empty()) {
+         result.push_back(value.get<std::string>());
+       }
+     }
+     return result;
+   }
+   
+   bool board_is_pinned(const Context& context, std::string_view board_id) {
+     const auto pinned = pinned_board_ids(context);
+     return std::ranges::find(pinned, board_id) != pinned.end();
+   }
+   
+   bool set_board_pinned(const Context& context, std::string_view board_id, bool pinned) {
+     json state = load_ui_state(context);
+     json ids = state.contains("pinned_boards") && state["pinned_boards"].is_array()
+                    ? state["pinned_boards"]
+                    : json::array();
+     std::vector<std::string> values;
+     for (const auto& value : ids) {
+       if (value.is_string()) {
+         values.push_back(value.get<std::string>());
+       }
+     }
+     std::erase(values, std::string(board_id));
+     if (pinned) {
+       values.push_back(std::string(board_id));
+     }
+     state["pinned_boards"] = json::array();
+     for (const auto& value : values) {
+       state["pinned_boards"].push_back(value);
+     }
+     return save_ui_state(context, state);
+   }
+   
+   struct ParsedTaskInput {
+     std::string title;        
+     std::string description;  
+     std::string start_date;   
+     std::string due_date;     
+     std::string priority;     
+   };
+   
+   ParsedTaskInput parse_task_fields(std::string_view text) {
+     std::array<std::string, 5> fields;
+     std::size_t field = 0;
+     const std::vector<char32_t> delimiter = field_delimiter_codepoints();
+     for (std::size_t index = 0; index < text.size();) {
+       const Utf8CodePoint character = decode_utf8(text, index);
+       if (character.value == 0x5C && index + character.bytes < text.size()) {
+         const std::size_t escaped_offset = index + character.bytes;
+         const std::size_t escaped_length = field_delimiter_length_at(text, escaped_offset, delimiter);
+         if (escaped_length > 0) {
+           fields[field].append(text.substr(escaped_offset, escaped_length));
+           index = escaped_offset + escaped_length;
+           continue;
+         }
+       }
+       const std::size_t delimiter_length = field_delimiter_length_at(text, index, delimiter);
+       if (delimiter_length > 0 && field + 1 < fields.size()) {
+         ++field;
+         index += delimiter_length;
+       } else {
+         fields[field].append(text.substr(index, character.bytes));
+         index += character.bytes;
+       }
+     }
+     for (auto& value : fields) {
+       value = trim(std::move(value));
+     }
+     // 简单语法：第二段若是优先级枚举，自动归入优先级（如 `title|high`）。
+     if (!fields[1].empty() && fields[4].empty()) {
+       std::string priority_candidate = fields[1];
+       std::ranges::transform(priority_candidate, priority_candidate.begin(),
+                              [](unsigned char character) { return std::tolower(character); });
+       if (priority_candidate == "low" || priority_candidate == "medium" ||
+           priority_candidate == "high" || priority_candidate == "critical") {
+         fields[4] = std::move(fields[1]);
+         fields[1].clear();
+       }
+     }
+     return {
+         .title = std::move(fields[0]),
+         .description = std::move(fields[1]),
+         .start_date = std::move(fields[2]),
+         .due_date = std::move(fields[3]),
+         .priority = std::move(fields[4]),
+     };
+   }
+   
+   std::string today_iso() {
+     return TaskManager::normalize_date("today").value_or("");
+   }
+   
+   std::string tomorrow_iso() {
+     return TaskManager::normalize_date("tomorrow").value_or("");
+   }
+   
+   json task_items(const Context& context, const std::vector<TaskManager::TaskRecord>& tasks) {
+     json items = json::array();
+     for (const auto& task : tasks) {
+       const std::string due = task.due_date.empty() ? "未设置" : task.due_date;
+       const std::string status_cn =
+           task.done ? "已完成" : (!task.archived.empty() ? "已归档" : "待办");
+       const std::string status_en =
+           task.done ? "done" : (!task.archived.empty() ? "archived" : "todo");
+       const std::string subtitle = bilingual(
+           std::format("任务 · {} · {} → {} · 截止 {} · 优先级 {}", status_cn, task.project_title,
+                       task.board_title, due, priority_label(task.priority)),
+           std::format("Task · {} · {} → {} · due {} · prio {}", status_en, task.project_title,
+                       task.board_title, due, task.priority.empty() ? "none" : task.priority));
+       const std::string task_handle = handle_query("task", remember_handle(context, "task", task.id));
+       items.push_back(item(std::format("任务｜{} {}", task.done ? "✓" : "○", task.title), subtitle,
+                            "", task_handle, false, icon_task()));
+     }
+     if (items.empty()) {
+       items.push_back(item("任务｜没有匹配结果",
+                            bilingual("换个关键词，或先执行 s rl 重载全部路径",
+                                      "Try another keyword, or run s rl to reload all paths"),
+                            "", "", false, icon_task()));
+     }
+     return items;
+   }
+   
+   bool fuzzy_match(std::string_view haystack, std::string_view needle) {
+     if (needle.empty()) {
+       return true;
+     }
+     std::string haystack_lower(haystack);
+     std::string needle_lower(needle);
+     std::ranges::transform(haystack_lower, haystack_lower.begin(),
+                            [](unsigned char character) { return std::tolower(character); });
+     std::ranges::transform(needle_lower, needle_lower.begin(),
+                            [](unsigned char character) { return std::tolower(character); });
+     if (haystack_lower.find(needle_lower) != std::string::npos) {
+       return true;
+     }
+     std::size_t cursor = 0;
+     for (const char character : haystack_lower) {
+       if (cursor < needle_lower.size() && character == needle_lower[cursor]) {
+         ++cursor;
+       }
+     }
+     return cursor == needle_lower.size();
+   }
+   
+   std::vector<TaskManager::BoardTarget> sorted_matching_boards(
+       const std::vector<TaskManager::BoardTarget>& boards, std::string_view query) {
+     std::vector<TaskManager::BoardTarget> result;
+     for (const auto& board : boards) {
+       const std::string haystack = std::format("{} {}", board.title, board.project_title);
+       if (fuzzy_match(haystack, query)) {
+         result.push_back(board);
+       }
+     }
+     return result;
+   }
+   
+   json board_items(const Context& context, const std::vector<TaskManager::BoardTarget>& boards,
+                    std::string_view query, bool for_add, std::string_view payload = {}) {
+     json items = json::array();
+     for (const auto& board : sorted_matching_boards(boards, query)) {
+       const bool project = board.kind == "project";
+       const std::string title =
+           project ? std::format("项目｜{}", board.title)
+                   : std::format("项目｜{}  →  清单｜{}", board.project_title, board.title);
+       const std::string icon = project ? icon_project() : icon_stack();
+       if (for_add && !payload.empty()) {
+         const auto parsed = parse_task_fields(payload);
+         items.push_back(item(
+             title,
+             bilingual(
+                 std::format("三级：任务 · 回车创建：{} · 开始 {} · 截止 {} · 优先级 {} · {}",
+                             parsed.title, parsed.start_date.empty() ? "未设置" : parsed.start_date,
+                             parsed.due_date.empty() ? "未设置" : parsed.due_date,
+                             parsed.priority.empty() ? "无" : priority_label(parsed.priority),
+                             parsed.description.empty() ? "无描述" : parsed.description),
+                 std::format("Level 3: task · create {} · start {} · due {} · priority {}{}",
+                             parsed.title, parsed.start_date.empty() ? "none" : parsed.start_date,
+                             parsed.due_date.empty() ? "none" : parsed.due_date,
+                             parsed.priority.empty() ? "none" : parsed.priority,
+                             parsed.description.empty()
+                                 ? ""
+                                 : std::format(" · description: {}", parsed.description))),
+             std::format("create:{}:{}", board.id, base64url_encode(payload)), "",
+             !parsed.title.empty(), icon));
+       } else {
+         const std::string_view prefix = for_add ? "add" : "board";
+         const std::string board_handle = remember_handle(context, "board", board.id);
+         items.push_back(item(
+             title,
+             bilingual(std::format("{} · {}", project ? "一级：项目" : "二级：清单",
+                                   for_add ? "回车进入单输入框五字段新建"
+                                           : "回车查看任务；输入五字段后直接创建"),
+                       std::format("{} · {}", project ? "Level 1: project" : "Level 2: list",
+                                   for_add ? "press Enter for the one-input task form"
+                                           : "press Enter to view tasks, or type five task fields")),
+             "", handle_query(prefix, board_handle), false, icon));
+       }
+     }
+     if (items.empty()) {
+       items.push_back(item("项目/清单｜没有匹配结果",
+                            bilingual("先执行 s ap 添加路径，或 s rl 重载全部路径",
+                                      "Run s ap to add a path, or s rl to reload all paths"),
+                            "", "", false, icon_project()));
+     }
+     return items;
+   }
+   
+   std::string one_line(std::string_view value) {
+     std::string result(value);
+     std::ranges::replace(result, '\n', ' ');
+     std::ranges::replace(result, '\r', ' ');
+     return result;
+   }
+   
+   json creation_form_items(std::string_view target_kind, std::string_view target_token,
+                            std::string_view target_label, std::string_view payload) {
+     json items = json::array();
+     const ParsedTaskInput parsed = parse_task_fields(payload);
+     const std::string title_value =
+         parsed.title.empty() ? "（请输入，必填）" : one_line(parsed.title);
+     const std::string description_value =
+         parsed.description.empty() ? "（可空）" : one_line(parsed.description);
+     const std::string start_value =
+         parsed.start_date.empty() ? today_iso() : one_line(parsed.start_date);
+     const std::string due_value =
+         parsed.due_date.empty() ? tomorrow_iso() : one_line(parsed.due_date);
+     const std::string priority_value = parsed.priority.empty() ? "low" : one_line(parsed.priority);
+     const std::string action =
+         std::format("create-preview:{}:{}:{}", target_kind, target_token, base64url_encode(payload));
+     const bool can_create = !parsed.title.empty();
+   
+     items.push_back(
+         item(std::format("标题：{}", title_value),
+              bilingual("必填 · 输入框格式中的第 1 段", "Required · first pipe-separated field"),
+              action, "", can_create, icon_task()));
+     items.push_back(
+         item(std::format("描述：{}", description_value),
+              bilingual("可空 · 输入框格式中的第 2 段", "Optional · second pipe-separated field"),
+              action, "", can_create, icon_note()));
+     items.push_back(item(std::format("开始：{}", start_value),
+                          "Default: today · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD",
+                          action, "", can_create, icon_week()));
+     items.push_back(item(std::format("截止：{}", due_value),
+                          "Default: tomorrow · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD",
+                          action, "", can_create, icon_week()));
+     items.push_back(item(std::format("优先级：{}", priority_value),
+                          "Default: low · Allowed: low, medium, high, critical", action, "",
+                          can_create, icon_task()));
+     items.push_back(item(
+         "回车创建任务 / Create task",
+         bilingual(std::format("目标：{} · 格式：标题|描述|开始|截止|优先级（|/｜均可） · {}",
+                               target_label, can_create ? "按回车写入本地 Stacks" : "标题为必填项"),
+                   can_create ? "Press Enter to create this task locally"
+                              : "Type a title in the Alfred input field first"),
+         action, "", can_create, icon_task()));
+     return items;
+   }
+   
+   std::string missing_entries_text(const std::vector<std::string>& entries) {
+     std::string result;
+     for (const auto& entry : entries) {
+       if (!result.empty()) {
+         result += ",";
+       }
+       result += entry;
+     }
+     return result;
+   }
+   
+   json config_items(const Context& context) {
+     json items = json::array();
+     const auto workspaces =
+         ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+     if (!workspaces) {
+       items.push_back(error_item(std::string(ProjectSync::sync_error_message(workspaces.error()))));
+       items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                            " ", false, icon_note()));
+       return items;
+     }
+     if (workspaces->empty()) {
+       items.push_back(item("尚无可移除路径",
+                            bilingual("先执行添加路径", "Add a workspace path first"), "", "", false,
+                            icon_note()));
+     }
+     for (std::size_t index = 0; index < workspaces->size(); ++index) {
+       const auto& workspace = (*workspaces)[index];
+       const std::string path = workspace.path.string();
+       const std::string short_handle = workspace_handle(context, workspace.path);
+       std::string status_cn;
+       std::string status_en;
+       std::string icon = system_icon("GenericFolderIcon.icns");
+       if (!workspace.exists) {
+         status_cn = "路径不存在";
+         status_en = "path missing";
+         icon = icon_info();
+       } else if (!workspace.is_directory) {
+         status_cn = "根路径不是目录";
+         status_en = "root is not a directory";
+         icon = icon_info();
+       } else if (!workspace.structure_valid) {
+         status_cn = std::format("结构无效 · 缺失/类型错误：{}",
+                                 missing_entries_text(workspace.missing_entries));
+         status_en = "invalid workspace structure";
+         icon = icon_info();
+       } else {
+         status_cn = std::format("有效 · {} 个项目 · {}", workspace.project_file_count,
+                                 index == 0 ? "默认 Inbox" : "已保存路径");
+         status_en = std::format("valid · {} project files · {}", workspace.project_file_count,
+                                 index == 0 ? "default Inbox" : "saved library");
+       }
+       items.push_back(
+           item(std::format("路径｜{}", workspace.path.filename().string()),
+                bilingual(std::format("{} · {} · 回车进入移除确认", path, status_cn),
+                          std::format("{} · press Enter to prepare index removal", status_en)),
+                "", handle_query("remove-path", short_handle), false, icon));
+     }
+     items.push_back(item("路径索引移除说明 / Path index removal",
+                          bilingual("选择上方任一路径并回车进入删除确认页；不会删除工作区文件",
+                                    "Press Enter on a path above to open the removal confirmation"),
+                          "", "", false, icon_info()));
+     items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "", " ",
+                          false, icon_note()));
+     return items;
+   }
+   
+   json default_inbox_items(const Context& context) {
+     json items = json::array();
+     const auto workspaces =
+         ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+     if (!workspaces) {
+       items.push_back(error_item(std::string(ProjectSync::sync_error_message(workspaces.error()))));
+       items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                            " ", false, icon_note()));
+       return items;
+     }
+     if (workspaces->empty()) {
+       items.push_back(item("尚无可设置的收件箱",
+                            bilingual("先执行 s ap 添加路径", "Run s ap to add a library first"), "",
+                            "", false, icon_inbox()));
+       items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                            " ", false, icon_note()));
+       return items;
+     }
+   
+     const auto current_default = default_inbox_path(context);
+     for (const auto& workspace : *workspaces) {
+       const bool is_default =
+           current_default && normalized_ui_path(workspace.path) == *current_default;
+       const std::string short_handle = workspace_handle(context, workspace.path);
+       const bool valid = workspace.structure_valid;
+       items.push_back(item(
+           std::format("收件箱路径｜{}{}", workspace.path.filename().string(),
+                       is_default ? " ⭐" : ""),
+           bilingual(std::format("{} · {} · 回车进入设为默认收件箱确认", workspace.path.string(),
+                                 valid ? "结构有效" : "结构无效，请先修复"),
+                     valid ? "Valid workspace · press Enter to set it as the default Inbox"
+                           : "Invalid workspace · repair it before setting as default"),
+           "",
+           valid ? std::format("default-inbox:{} {}", short_handle, handle_sentinel_from_env()) : "",
+           false, valid ? icon_inbox() : icon_info()));
+     }
+     items.push_back(
+         item("默认收件箱说明 / Default inbox",
+              bilingual("回车上方路径设置默认收件箱；重复执行可重设，默认收件箱只有一个",
+                        "Press Enter on a path to set the single default Inbox; run again to reset"),
+              "", "", false, icon_info()));
+     items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "", " ",
+                          false, icon_note()));
+     return items;
+   }
+   
+   std::string board_display_title(const TaskManager::BoardTarget& board, std::string_view suffix) {
+     return board.kind == "project"
+                ? std::format("项目｜{}{}", board.title, suffix)
+                : std::format("项目｜{}  →  清单｜{}{}", board.project_title, board.title, suffix);
+   }
+   
+   json pin_items(const Context& context, std::string_view query) {
+     json items = json::array();
+     const auto boards = TaskManager::list_boards(context.databases);
+     if (!boards) {
+       items.push_back(error_item(std::string(TaskManager::task_error_message(boards.error()))));
+       items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                            " ", false, icon_note()));
+       return items;
+     }
+   
+     std::vector<TaskManager::BoardTarget> pinned;
+     std::vector<TaskManager::BoardTarget> others;
+     for (const auto& board : sorted_matching_boards(*boards, query)) {
+       (board_is_pinned(context, board.id) ? pinned : others).push_back(board);
+     }
+     const auto render_row = [&](const TaskManager::BoardTarget& board) {
+       const bool is_pinned = board_is_pinned(context, board.id);
+       const std::string short_handle = remember_handle(context, "board", board.id);
+       items.push_back(
+           item(board_display_title(board, is_pinned ? " 📌" : ""),
+                bilingual(std::format("{} · 回车进入{}固定确认",
+                                      board.library_path.filename().string(), is_pinned ? "取消" : ""),
+                          std::format("{} · press Enter to {}pin",
+                                      board.library_path.filename().string(), is_pinned ? "un" : "")),
+                "", std::format("pin:{} {}", short_handle, handle_sentinel_from_env()), false,
+                is_pinned ? icon_stack() : (board.kind == "project" ? icon_project() : icon_stack())));
+     };
+     for (const auto& board : pinned) {
+       render_row(board);
+     }
+     for (const auto& board : others) {
+       render_row(board);
+     }
+     if (items.empty()) {
+       items.push_back(item("项目/清单｜没有匹配结果",
+                            bilingual("先执行 s ap 添加路径，或 s rl 重载全部路径",
+                                      "Run s ap to add a path, or s rl to reload all paths"),
+                            "", "", false, icon_project()));
+     }
+     items.push_back(item(
+         "固定项目/看板说明 / Pin boards",
+         bilingual("回车固定或取消固定；固定仅影响排序，标题自带 📌 不会被误判",
+                   "Press Enter to pin/unpin; pinning only affects ordering, literal 📌 titles are "
+                   "never rewritten"),
+         "", "", false, icon_info()));
+     items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "", " ",
+                          false, icon_note()));
+     return items;
+   }
+   
+   json default_inbox_confirm_items(const Context& context, std::string_view token) {
+     const auto path = resolve_workspace(context, token);
+     if (!path) {
+       return json::array({error_item("工作区句柄已失效", "Workspace handle is invalid")});
+     }
+     const std::string short_handle = workspace_handle(context, *path);
+     const bool is_default = default_inbox_path(context) == *path;
+     json items = json::array();
+     items.push_back(item(
+         std::format("设为默认收件箱？｜{}{}", path->filename().string(), is_default ? " ⭐" : ""),
+         bilingual(
+             std::format("{} · 之后 s di / s i 中该收件箱显示 ⭐", path->string()),
+             std::format("{} · this Inbox will be marked with ⭐ in s di / s i", path->string())),
+         "", "", false, icon_inbox()));
+     items.push_back(item("是，设为默认收件箱 / Set default",
+                          bilingual("再次回车执行；默认收件箱只有一个，可随时重设",
+                                    "Press Enter to set the single default Inbox; reset anytime"),
+                          std::format("default-inbox-confirm:{}", short_handle), "", true,
+                          icon_inbox()));
+     items.push_back(item("否，返回收件箱列表 / Back", bilingual("不修改默认收件箱", "Keep unchanged"),
+                          "", "default-inbox", false, icon_note()));
+     return items;
+   }
+   
+   json pin_confirm_items(const Context& context, std::string_view token) {
+     const auto board_id = resolve_handle(context, "board", token);
+     if (!board_id) {
+       return json::array({error_item("项目/清单句柄已失效", "Board handle is invalid")});
+     }
+     const auto boards = TaskManager::list_boards(context.databases);
+     if (!boards) {
+       return json::array({error_item(std::string(TaskManager::task_error_message(boards.error())))});
+     }
+     const auto board = std::ranges::find_if(
+         *boards, [&](const TaskManager::BoardTarget& value) { return value.id == *board_id; });
+     if (board == boards->end()) {
+       return json::array({error_item("找不到目标项目/清单", "Board not found")});
+     }
+     const bool is_pinned = board_is_pinned(context, *board_id);
+     const std::string short_handle = remember_handle(context, "board", *board_id);
+     json items = json::array();
+     items.push_back(
+         item(std::format("{}固定？｜{}{}", is_pinned ? "取消" : "", board_display_title(*board, ""),
+                          is_pinned ? " 📌" : ""),
+              bilingual(is_pinned ? "取消后恢复普通排序，不修改项目/清单名称"
+                                  : "固定后仅优先显示，不修改项目/清单名称",
+                        is_pinned ? "Unpin to restore normal ordering; names are never rewritten"
+                                  : "Pinned boards are only listed first; names are never rewritten"),
+              "", "", false, is_pinned ? icon_stack() : icon_note()));
+     items.push_back(
+         item(is_pinned ? "是，取消固定 / Unpin" : "是，固定 / Pin",
+              bilingual(is_pinned ? "再次回车取消固定" : "再次回车固定此项目/清单",
+                        is_pinned ? "Press Enter to unpin" : "Press Enter to pin this board"),
+              std::format("{}:{}", is_pinned ? "pin-unconfirm" : "pin-confirm", short_handle), "",
+              true, icon_stack()));
+     items.push_back(item("否，返回项目/清单列表 / Back",
+                          bilingual("不修改固定状态", "Keep pin state unchanged"), "", "pin", false,
+                          icon_note()));
+     return items;
+   }
+   
+   json choose_target_form_items(std::string_view payload) {
+     json items = json::array();
+     const ParsedTaskInput parsed = parse_task_fields(payload);
+     const std::string next_query = std::format("choose-target:{}", base64url_encode(payload));
+     const bool can_create = !parsed.title.empty();
+     items.push_back(item(
+         std::format("标题：{}", parsed.title.empty() ? "（请输入，必填）" : one_line(parsed.title)),
+         bilingual("必填 · 输入框格式中的第 1 段", "Required · first pipe-separated field"), "",
+         can_create ? next_query : "", false, icon_task()));
+     items.push_back(
+         item(std::format("描述：{}",
+                          parsed.description.empty() ? "（可空）" : one_line(parsed.description)),
+              bilingual("可空 · 输入框格式中的第 2 段", "Optional · second pipe-separated field"), "",
+              can_create ? next_query : "", false, icon_note()));
+     items.push_back(
+         item(std::format("开始：{}",
+                          parsed.start_date.empty() ? today_iso() : one_line(parsed.start_date)),
+              "Default: today · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD", "",
+              can_create ? next_query : "", false, icon_week()));
+     items.push_back(item(
+         std::format("截止：{}", parsed.due_date.empty() ? tomorrow_iso() : one_line(parsed.due_date)),
+         "Default: tomorrow · Allowed: today, tomorrow, +Nd, weekday, YYYY-MM-DD", "",
+         can_create ? next_query : "", false, icon_week()));
+     items.push_back(
+         item(std::format("优先级：{}", parsed.priority.empty() ? "low" : one_line(parsed.priority)),
+              "Default: low · Allowed: low, medium, high, critical", "", can_create ? next_query : "",
+              false, icon_task()));
+     items.push_back(
+         item("回车选择创建目标 / Choose target",
+              bilingual("目标顺序：⭐默认收件箱 → 📌固定项目/看板；回车创建",
+                        "Target order: ⭐ default Inbox → 📌 pinned boards; press Enter to create"),
+              "", can_create ? next_query : "", false, icon_task()));
+     return items;
+   }
+   
+   json choose_target_items(const Context& context, std::string_view payload) {
+     json items = json::array();
+     const auto workspaces =
+         ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+     const auto boards = TaskManager::list_boards(context.databases);
+     if (!workspaces || !boards) {
+       items.push_back(
+           error_item(!workspaces ? std::string(ProjectSync::sync_error_message(workspaces.error()))
+                                  : std::string(TaskManager::task_error_message(boards.error()))));
+       return items;
+     }
+   
+     const auto default_path = default_inbox_path(context);
+     const auto default_workspace =
+         default_path
+             ? std::ranges::find_if(*workspaces,
+                                    [&](const ProjectSync::WorkspaceStatus& value) {
+                                      return normalized_ui_path(value.path) == *default_path &&
+                                             value.structure_valid;
+                                    })
+             : workspaces->end();
+     if (default_workspace != workspaces->end()) {
+       const std::string short_handle = workspace_handle(context, default_workspace->path);
+       items.push_back(item(
+           std::format("收件箱｜⭐ {}", default_workspace->path.filename().string()),
+           bilingual(std::format("{} · 回车创建到默认收件箱", default_workspace->path.string()),
+                     std::format("{} · press Enter to create in the default Inbox",
+                                 default_workspace->path.string())),
+           std::format("choose-create:inbox:{}:{}", short_handle, payload), "", true, icon_inbox()));
+     } else {
+       items.push_back(
+           item("未设置默认收件箱 / No default Inbox",
+                bilingual("先执行 s di 指定默认收件箱，或继续使用下方固定项目/看板",
+                          "Run s di to choose a default Inbox, or use a pinned board below"),
+                "", "", false, icon_inbox()));
+     }
+   
+     std::size_t pinned_count = 0;
+     for (const auto& board : *boards) {
+       if (!board_is_pinned(context, board.id)) {
+         continue;
+       }
+       ++pinned_count;
+       const std::string short_handle = remember_handle(context, "board", board.id);
+       items.push_back(item(
+           board_display_title(board, " 📌"),
+           bilingual(std::format("{} · 回车创建到该项目/清单", board.library_path.filename().string()),
+                     std::format("{} · press Enter to create in this board",
+                                 board.library_path.filename().string())),
+           std::format("choose-create:board:{}:{}", short_handle, payload), "", true,
+           board.kind == "project" ? icon_project() : icon_stack()));
+     }
+   
+     // 既没有默认收件箱也没有固定项目/看板时，引导用户先维护偏好。
+     // 提示中的触发词全部读取 Alfred 配置变量，不写死默认值。
+     if (default_workspace == workspaces->end() && pinned_count == 0) {
+       items.clear();
+       const std::string default_alias = alias_from_env("STACKS_ALIAS_DEFAULT_INBOX", "di");
+       const std::string pin_alias = alias_from_env("STACKS_ALIAS_PIN", "pin");
+       const std::string inbox_alias = alias_from_env("STACKS_ALIAS_INBOX", "i");
+       const std::string view_alias = alias_from_env("STACKS_ALIAS_VIEW", "v");
+       items.push_back(item(
+           "请先维护创建目标 / Configure create targets",
+           bilingual(std::format("运行 s {} 设置默认收件箱，或 s {} 固定常用项目/看板；也可以直接 "
+                                 "用 s {} / s {} 进入收件箱或项目看板",
+                                 default_alias, pin_alias, inbox_alias, view_alias),
+                     std::format("Run s {} to set the default Inbox, or s {} to pin boards; you can "
+                                 "also use s {} / s {} directly",
+                                 default_alias, pin_alias, inbox_alias, view_alias)),
+           "", "", false, icon_info()));
+       items.push_back(item("← 返回上一级 / Back",
+                            bilingual("返回六行创建面板", "Back to the six-row create panel"), "", "",
+                            false, icon_note()));
+       return items;
+     }
+   
+     items.push_back(item(
+         "创建目标说明 / Create target",
+         bilingual(
+             "默认收件箱优先，其次固定项目/看板；可用 s di 重设默认，s pin 维护固定列表",
+             "Default Inbox first, then pinned boards; s di resets the default, s pin edits pins"),
+         "", "", false, icon_info()));
+     items.push_back(item("← 返回上一级 / Back",
+                          bilingual("返回六行创建面板", "Back to the six-row create panel"), "", "",
+                          false, icon_note()));
+     return items;
+   }
+   
+   json inbox_workspace_items(const Context& context, const fs::path& path,
+                              std::string_view raw_payload) {
+     json items = json::array();
+     const fs::path workspace_path = normalized_ui_path(path);
+     const auto status = ProjectSync::inspect_workspace(workspace_path);
+     if (!status.structure_valid) {
+       items.push_back(
+           error_item(std::format("工作区结构无效：{}", missing_entries_text(status.missing_entries)),
+                      "Fix the workspace structure or remove its index from s cf"));
+       items.push_back(item("← 返回路径列表 / Back", bilingual("返回全部收件箱工作区", "Back"), "",
+                            "inbox ", false, icon_note()));
+       return items;
+     }
+   
+     const std::string payload = strip_input_sentinel(raw_payload);
+     const std::string label = std::format("工作区 {}", workspace_path.filename().string());
+     const std::string target_token = workspace_handle(context, workspace_path);
+   
+     TaskManager::TaskListOptions options;
+     options.target = TaskManager::TargetId("inbox");
+     options.query = payload;
+     apply_task_visibility(options);
+     const auto tasks = TaskManager::list_tasks(context.databases, options);
+     if (!tasks) {
+       items.push_back(error_item(std::string(TaskManager::task_error_message(tasks.error()))));
+       return items;
+     }
+     std::vector<TaskManager::TaskRecord> filtered;
+     for (const auto& task : *tasks) {
+       if (normalized_ui_path(task.library_path) == workspace_path) {
+         filtered.push_back(task);
+       }
+     }
+   
+     // 输入无命中时复用单输入框五字段创建面板，保证搜索与新建自然衔接。
+     if (!payload.empty() && filtered.empty()) {
+       return creation_form_items("inbox", target_token, label, payload);
+     }
+   
+     if (!filtered.empty()) {
+       const json task_rows = task_items(context, filtered);
+       for (const auto& task : task_rows) {
+         items.push_back(task);
+       }
+     } else {
+       items.push_back(
+           item("收件箱｜暂无任务",
+                bilingual("在输入框直接输入创建参数即可新建", "Type a pipe-separated task below"), "",
+                "", false, icon_inbox()));
+     }
+     const std::string help_title = payload.empty()
+                                        ? "搜索或新建任务 / Search or create"
+                                        : std::format("搜索｜{} · {} 项", payload, filtered.size());
+     items.push_back(
+         item(help_title,
+              payload.empty()
+                  ? bilingual("输入关键词模糊搜索（标题优先、描述其次）；无命中自动进入创建面板",
+                              "Type a keyword to fuzzy-search tasks; no match opens the create panel")
+                  : bilingual("未命中会切换为六行创建面板；也可直接输入标题|描述|开始|截止|优先级",
+                              "No match switches to the six-row create panel; pipe-separated fields "
+                              "also create directly"),
+              "", "", false, icon_info()));
+     items.push_back(item("← 返回路径列表 / Back", bilingual("返回全部收件箱工作区", "Back"), "",
+                          "inbox ", false, icon_note()));
+     return items;
+   }
+   
+   json task_detail(const Context& context, const TaskManager::TaskRecord& task,
+                    std::string_view task_handle) {
+     json items = json::array();
+   
+     // 返回查询必须回到任务原层级：Inbox 带工作区，Backlog 带项目，Stack 带清单。
+     std::string back_query;
+     if (task.board_id == "inbox") {
+       back_query =
+           handle_query("inbox", remember_handle(context, "inbox", task.library_path.string()));
+     } else if (task.board_id == "backlog") {
+       back_query = handle_query("board", remember_handle(context, "board", task.project_id));
+     } else {
+       back_query = handle_query("board", remember_handle(context, "board", task.board_id));
+     }
+     const json help_item =
+         item(std::format("三级：任务｜{} {}", task.done ? "✓" : "○", task.title),
+              bilingual(std::format("项目：{} → 清单：{} · 开始 {} · 截止 {} · 优先级 {} · {}",
+                                    task.project_title, task.board_title,
+                                    task.start_date.empty() ? "未设置" : task.start_date,
+                                    task.due_date.empty() ? "未设置" : task.due_date,
+                                    priority_label(task.priority), task_handle),
+                        std::format("project: {} → list: {} · start {} · due {} · priority {} · {}",
+                                    task.project_title, task.board_title,
+                                    task.start_date.empty() ? "none" : task.start_date,
+                                    task.due_date.empty() ? "none" : task.due_date,
+                                    task.priority.empty() ? "none" : task.priority, task_handle)),
+              "", "", false, icon_task());
+   
+     // 优先操作一：新建日历日程（日历已安装且未来 N 分钟窗口未被 Stacks2 日程占用）。
+     if (calendar_window_free(context)) {
+       const int minutes = calendar_duration_minutes();
+       items.push_back(item(
+           std::format("新建日历日程（Stacks2 独占 {} 分钟）", minutes),
+           bilingual(
+               std::format("标题=任务标题，备注=描述；未来 {} 分钟内只能插入一次", minutes, minutes),
+               std::format("Calendar event with task title/description; one Stacks2 slot per "
+                           "{} minutes",
+                           minutes)),
+           std::format("calendar-create:{}", task.id), "", true,
+           app_icon("Calendar.app", "AppIcon.icns")));
+     }
+   
+     // 优先操作二：同步到 OmniFocus（需要截止日期且本机已安装）。
+     if (!task.due_date.empty() && omnifocus_app_installed()) {
+       items.push_back(
+           item("同步到 OmniFocus",
+                bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
+                std::format("sync:{}:omnifocus", task.id), "", true, icon_sync()));
+     }
+   
+     // 编辑组：条目本身不可选，autocomplete 让用户先输入值，再由 filter 生成 action。
+     items.push_back(item(
+         "修改标题", bilingual("输入新标题后回车，描述保持不变", "Type a new title, then press Enter"),
+         "", std::format("rename:{} ✅ ", task_handle), false, icon_info()));
+     items.push_back(item(
+         "修改描述",
+         bilingual("输入新描述后回车，支持 Markdown/HTML", "Type a new description, then press Enter"),
+         "", std::format("desc:{} ✅ ", task_handle), false, icon_task()));
+     items.push_back(item("设置截止日期",
+                          bilingual("支持 2026-11-08、today、tomorrow、+3d、monday",
+                                    "Supports YYYY-MM-DD, today, tomorrow, +3d and weekdays"),
+                          "", std::format("due:{} ✅ ", task_handle), false, icon_week()));
+     items.push_back(
+         item("设置开始日期",
+              bilingual("与截止日期组成计划区间", "Combine with due date to define a planned range"),
+              "", std::format("start:{} ✅ ", task_handle), false, icon_week()));
+     items.push_back(item("设置开始/截止区间",
+                          bilingual("格式：开始日期|截止日期", "Format: start-date|due-date"), "",
+                          std::format("schedule:{} ✅ ", task_handle), false, icon_week()));
+     items.push_back(item("设置优先级",
+                          bilingual("可选：low/低、medium/中、high/高、critical/紧急",
+                                    "Choose low, medium, high or critical priority"),
+                          "", std::format("priority:{} ✅ ", task_handle), false, icon_task()));
+   
+     // 完成状态以可执行 token 提交；1=完成、0=重开，避免文本布尔值歧义。
+     items.push_back(item(
+         task.done ? "重新打开任务" : "标记为已完成",
+         task.done ? bilingual("恢复为待办并清空完成时间", "Reopen as To do and clear completion")
+                   : bilingual("写入完成状态和 100% 进度", "Mark done and write 100 percent progress"),
+         std::format("done:{}:{}", task.id, task.done ? "0" : "1"), "", true, icon_task()));
+   
+     // 计时组保留一个不可选说明项，start/stop 各自是独立 action。
+     items.push_back(
+         item("计时操作",
+              bilingual("启动计时或停止并写入 timelog", "Start a timer, or stop and write a timelog"),
+              "", "", false, icon_timer()));
+     items.back()["autocomplete"] = std::format("timer:{} ✅ ", task_handle);
+     items.push_back(item("启动计时", bilingual("立即为此任务开始计时", "Start timing this task now"),
+                          std::format("timer-start:{}", task.id), "", true, icon_timer()));
+     items.push_back(
+         item("停止并写入时间记录",
+              bilingual("生成 Stacks 兼容 timelog", "Stop and write a Stacks-compatible timelog"),
+              std::format("timer-stop:{}", task.id), "", true, icon_timer()));
+   
+     // 外部提醒同步要求 duedate，且只展示本机已安装的应用。
+     if (!task.due_date.empty()) {
+       const bool reminders_ready = reminders_app_installed();
+       const bool omnifocus_ready = omnifocus_app_installed();
+       if (reminders_ready) {
+         items.push_back(item(
+             "同步到 Apple 提醒",
+             bilingual(std::format("截止 {}", task.due_date), std::format("due {}", task.due_date)),
+             std::format("sync:{}:reminders", task.id), "", true,
+             app_icon("Reminders.app", "AppIcon.icns")));
+       }
+       if (reminders_ready && omnifocus_ready) {
+         items.push_back(
+             item("同步到提醒 + OmniFocus",
+                  bilingual("按 Stacks-ID 去重并更新", "Deduplicate and update by Stacks-ID"),
+                  std::format("sync:{}:both", task.id), "", true, icon_sync()));
+       }
+       if (!reminders_ready && !omnifocus_ready) {
+         items.push_back(item("提醒同步不可用",
+                              bilingual("本机未安装 Apple 提醒与 OmniFocus",
+                                        "Reminders and OmniFocus are not installed"),
+                              "", "", false, icon_info()));
+       }
+     } else {
+       items.push_back(
+           item("提醒同步不可用",
+                bilingual("先为该任务设置截止日期", "Set a due date before syncing reminders"), "", "",
+                false, icon_info()));
+     }
+   
+     // 归档保留任务文件；删除采用两步确认，真正执行移到 .trash。
+     items.push_back(item("归档任务",
+                          bilingual("写入 archived 时间，之后仍可恢复编辑",
+                                    "Set archived time; the task remains recoverable"),
+                          std::format("archive:{}", task.id), "", true, icon_project()));
+     items.push_back(item("移到可恢复垃圾箱",
+                          bilingual("从清单移除，文件移动到 tasks/.trash",
+                                    "Remove from lists and move the file to tasks/.trash"),
+                          "", std::format("delete:{} ✅ ", task_handle), false,
+                          system_icon("ToolbarDeleteIcon.icns")));
+     items.push_back(help_item);
+     items.push_back(item("← 返回上一级 / Back",
+                          bilingual("返回任务列表，再选择其他操作",
+                                    "Return to the task list and choose another action"),
+                          "", back_query, false, icon_note()));
+     return feedback(items);
+   }
+   
+   // ---- Action 解析与业务分发 -------------------------------------------------
+   
+   std::string provider_label(ReminderSync::Provider provider) {
+     return ReminderSync::provider_name(provider);
+   }
+   
+   std::optional<ReminderSync::Provider> parse_provider(std::string_view value) {
+     if (value == "reminders") {
+       return ReminderSync::Provider::reminders;
+     }
+     if (value == "omnifocus") {
+       return ReminderSync::Provider::omnifocus;
+     }
+     if (value == "both") {
+       return ReminderSync::Provider::both;
+     }
+     return std::nullopt;
+   }
+   
+   bool provider_available(ReminderSync::Provider provider) {
+     if (provider == ReminderSync::Provider::reminders) {
+       return reminders_app_installed();
+     }
+     if (provider == ReminderSync::Provider::omnifocus) {
+       return omnifocus_app_installed();
+     }
+     return reminders_app_installed() && omnifocus_app_installed();
+   }
+   
+   std::expected<std::string, std::string> task_error(TaskManager::TaskError error) {
+     return std::unexpected(std::string(TaskManager::task_error_message(error)));
+   }
+   
+   std::expected<std::string, std::string> sync_single(const Context& context,
+                                                       std::string_view task_id,
+                                                       ReminderSync::Provider provider,
+                                                       bool dry_run = false) {
+     if (!provider_available(provider)) {
+       return std::unexpected("同步目标应用未安装 / Sync target app is not installed");
+     }
+     const auto task =
+         TaskManager::get_task(TaskManager::TaskId(std::string(task_id)), context.databases);
+     if (!task) {
+       return task_error(task.error());
+     }
+     ReminderSync::SyncOptions options;
+     options.dry_run = dry_run;
+     const auto result = ReminderSync::sync_task(
+         ReminderSync::TaskReminder{
+             .task_id = task->id,
+             .title = task->title,
+             .description = task->description,
+             .due_date = task->due_date,
+             .done = task->done,
+         },
+         provider, options);
+     if (!result) {
+       return std::unexpected(std::string(ReminderSync::sync_error_message(result.error())));
+     }
+     return std::format("已同步到 {} · {}\nSynced to {} · {}", provider_label(provider),
+                        result->marker, provider_label(provider), result->marker);
+   }
+   
+   std::expected<std::string, std::string> create_task_for_target(const Context& context,
+                                                                  std::string_view kind,
+                                                                  std::string_view target_token,
+                                                                  std::string_view raw_payload) {
+     const auto payload = base64url_decode(raw_payload);
+     if (!payload) {
+       return std::unexpected("invalid create payload");
+     }
+     const ParsedTaskInput parsed = parse_task_fields(*payload);
+     if (parsed.title.empty()) {
+       return std::unexpected("任务标题不能为空 / Task title is required");
+     }
+     const std::string start_date = parsed.start_date.empty() ? today_iso() : parsed.start_date;
+     const std::string due_date = parsed.due_date.empty() ? tomorrow_iso() : parsed.due_date;
+     const std::string priority = parsed.priority.empty() ? "low" : parsed.priority;
+     const TaskManager::TaskInput input{
+         TaskManager::TaskTitle(parsed.title),
+         TaskManager::TaskDescription(parsed.description),
+         start_date.empty() ? std::nullopt : std::optional<std::string>(start_date),
+         due_date.empty() ? std::nullopt : std::optional<std::string>(due_date),
+         priority,
+     };
+     TaskManager::CreateTaskOptions options{context.databases, context.inbox_library};
+     std::expected<TaskManager::TaskResult, TaskManager::TaskError> created =
+         std::unexpected(TaskManager::TaskError::target_not_found);
+     if (kind == "board") {
+       const auto target = resolve_handle(context, "board", target_token);
+       if (!target) {
+         return std::unexpected("项目/清单句柄已失效 / Board handle is invalid");
+       }
+       created = TaskManager::create_task(TaskManager::TargetId(*target), input, options);
+     } else if (kind == "inbox") {
+       const auto resolved = resolve_workspace(context, target_token);
+       if (!resolved) {
+         return std::unexpected("工作区路径无效 / Invalid Inbox workspace");
+       }
+       const fs::path library = normalized_ui_path(*resolved);
+       const auto workspace = ProjectSync::inspect_workspace(library);
+       if (!workspace.structure_valid) {
+         return std::unexpected("工作区结构无效，不能创建 Inbox 任务 / Invalid workspace");
+       }
+       options.inbox_library = library;
+       created = TaskManager::create_inbox_task(input, options);
+     } else {
+       return std::unexpected("未知任务目标 / Unknown create target");
+     }
+     if (!created) {
+       return task_error(created.error());
+     }
+     const std::string short_handle = remember_handle(context, "task", created->task_id.value);
+     json state = load_ui_state(context);
+     state.erase("draft");
+     static_cast<void>(save_ui_state(context, state));
+     return std::format("任务已创建 · {}\nTask created · {}\n{}", one_line(parsed.title),
+                        one_line(parsed.title), "task:" + short_handle);
+   }
+   
+   std::expected<std::string, std::string> dispatch_action(const Context& context,
+                                                           std::string_view token) {
+     // token 不使用 shell 引号协议，按冒号恢复字段即可。
+     const auto parts = [&] {
+       std::vector<std::string> result;
+       std::size_t start = 0;
+       while (start <= token.size()) {
+         const std::size_t end = token.find(':', start);
+         result.emplace_back(token.substr(start, end == std::string_view::npos ? end : end - start));
+         if (end == std::string_view::npos) {
+           break;
+         }
+         start = end + 1;
+       }
+       return result;
+     }();
+     if (parts.empty()) {
+       return std::unexpected("empty action");
+     }
+   
+     const std::string& command = parts[0];
+   
+     // 单输入框五字段提交：create-preview:<board|inbox>:<target>:<base64(payload)>。
+     if (command == "create-preview" && parts.size() == 4) {
+       return create_task_for_target(context, parts[1], parts[2], parts[3]);
+     }
+   
+     // 非法触发词聚合创建：choose-create:<board|inbox>:<target>:<base64(payload)>。
+     if (command == "choose-create" && parts.size() == 4) {
+       return create_task_for_target(context, parts[1], parts[2], parts[3]);
+     }
+   
+     // 设置/重设默认收件箱：default-inbox-confirm:<workspace-short-handle>。
+     if (command == "default-inbox-confirm" && parts.size() == 2) {
+       const auto path = resolve_workspace(context, parts[1]);
+       if (!path) {
+         return std::unexpected("工作区句柄已失效 / Workspace handle is invalid");
+       }
+       const auto workspace = ProjectSync::inspect_workspace(*path);
+       if (!workspace.structure_valid) {
+         return std::unexpected("工作区结构无效，不能设为默认收件箱 / Invalid workspace");
+       }
+       if (!save_default_inbox(context, *path)) {
+         return std::unexpected("保存默认收件箱失败 / Failed to save the default Inbox");
+       }
+       return std::format("⭐ 默认收件箱已设置 · {}\n⭐ Default Inbox set · {}",
+                          path->filename().string(), path->filename().string());
+     }
+   
+     // 固定项目/看板：pin-confirm / pin-unconfirm:<board-short-handle>。
+     if ((command == "pin-confirm" || command == "pin-unconfirm") && parts.size() == 2) {
+       const auto board_id = resolve_handle(context, "board", parts[1]);
+       if (!board_id) {
+         return std::unexpected("项目/清单句柄已失效 / Board handle is invalid");
+       }
+       const auto boards = TaskManager::list_boards(context.databases);
+       if (!boards) {
+         return task_error(boards.error());
+       }
+       const auto board = std::ranges::find_if(
+           *boards, [&](const TaskManager::BoardTarget& value) { return value.id == *board_id; });
+       if (board == boards->end()) {
+         return std::unexpected("找不到目标项目/清单 / Board not found");
+       }
+       const bool pin = command == "pin-confirm";
+       if (!set_board_pinned(context, *board_id, pin)) {
+         return std::unexpected("保存固定状态失败 / Failed to save the pin state");
+       }
+       return pin ? std::format("📌 已固定 · {}\n📌 Pinned · {}", board_display_title(*board, ""),
+                                board_display_title(*board, ""))
+                  : std::format("已取消固定 · {}\nUnpinned · {}", board_display_title(*board, ""),
+                                board_display_title(*board, ""));
+     }
+   
+     // 创建任务：create:<board-id>:<base64(payload)>。
+     if (command == "create" && parts.size() == 3) {
+       const auto payload = base64url_decode(parts[2]);
+       if (!payload) {
+         return std::unexpected("invalid create payload");
+       }
+       const auto parsed = parse_task_fields(*payload);
+       TaskManager::CreateTaskOptions options{context.databases, context.inbox_library};
+       const auto result = TaskManager::create_task(
+           TaskManager::TargetId(parts[1]),
+           TaskManager::TaskInput{
+               TaskManager::TaskTitle(parsed.title),
+               TaskManager::TaskDescription(parsed.description),
+               parsed.start_date.empty() ? std::nullopt
+                                         : std::optional<std::string>(parsed.start_date),
+               parsed.due_date.empty() ? std::optional<std::string>(tomorrow_iso())
+                                       : std::optional<std::string>(parsed.due_date),
+               parsed.priority,
+           },
+           options);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("任务已创建 · {}\nTask created · {}", result->task_id.value,
+                          result->task_id.value);
+     }
+   
+     // 创建 Inbox：create-inbox:[base64(path):]<base64(payload)>。
+     if (command == "create-inbox" && (parts.size() == 2 || parts.size() == 3)) {
+       const auto payload = base64url_decode(parts.back());
+       if (!payload) {
+         return std::unexpected("invalid Inbox payload");
+       }
+       TaskManager::CreateTaskOptions options{context.databases, context.inbox_library};
+       if (parts.size() == 3) {
+         const auto library = base64url_decode(parts[1]);
+         if (!library || library->empty()) {
+           return std::unexpected("invalid Inbox library path");
+         }
+         options.inbox_library = fs::path(*library);
+       }
+       const auto parsed = parse_task_fields(*payload);
+       const auto result = TaskManager::create_inbox_task(
+           TaskManager::TaskInput{
+               TaskManager::TaskTitle(parsed.title),
+               TaskManager::TaskDescription(parsed.description),
+               parsed.start_date.empty() ? std::nullopt
+                                         : std::optional<std::string>(parsed.start_date),
+               parsed.due_date.empty() ? std::optional<std::string>(tomorrow_iso())
+                                       : std::optional<std::string>(parsed.due_date),
+               parsed.priority,
+           },
+           options);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("已添加至收件箱 · {}\nAdded to Inbox · {}", result->task_id.value,
+                          result->task_id.value);
+     }
+   
+     // 单字段编辑：操作名:<task-id>:<base64(value)>。
+     if ((command == "rename" || command == "desc" || command == "due" || command == "start" ||
+          command == "priority") &&
+         parts.size() == 3) {
+       const auto payload = base64url_decode(parts[2]);
+       if (!payload) {
+         return std::unexpected("invalid edit payload");
+       }
+       TaskManager::TaskPatch patch;
+       if (command == "rename") {
+         patch.title = *payload;
+       } else if (command == "desc") {
+         patch.description = *payload;
+       } else if (command == "due") {
+         patch.due_date = *payload;
+       } else if (command == "start") {
+         patch.start_date = *payload;
+       } else {
+         patch.priority = *payload;
+       }
+       const auto result =
+           TaskManager::update_task(TaskManager::TaskId(parts[1]), patch, context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return "任务已更新\nTask updated";
+     }
+   
+     // 计划区间：schedule:<task-id>:<base64(start)>:<base64(due)>。
+     if (command == "schedule" && parts.size() == 4) {
+       const auto start = base64url_decode(parts[2]);
+       const auto due = base64url_decode(parts[3]);
+       if (!start || !due) {
+         return std::unexpected("invalid schedule payload");
+       }
+       const auto result =
+           TaskManager::set_schedule(TaskManager::TaskId(parts[1]), *start, *due, context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("计划已更新 · {} → {}\nSchedule updated · {} → {}", result->start_date,
+                          result->due_date, result->start_date, result->due_date);
+     }
+   
+     // 完成/重开使用 1/0 token，避免布尔文本大小写歧义。
+     if (command == "done" && parts.size() == 3) {
+       const auto result = TaskManager::set_task_done(TaskManager::TaskId(parts[1]), parts[2] == "1",
+                                                      context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return result->done ? "任务已完成\nTask completed" : "任务已重新打开\nTask reopened";
+     }
+   
+     // 计时 action 直接使用任务 ID；业务模块负责状态冲突分类。
+     if (command == "timer-start" && parts.size() == 2) {
+       const auto result = TaskManager::start_timer(TaskManager::TaskId(parts[1]), context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("计时已开始 · {}\nTimer started · {}", result->title, result->title);
+     }
+     if (command == "timer-stop" && parts.size() == 2) {
+       const auto result = TaskManager::stop_timer(TaskManager::TaskId(parts[1]), context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("计时已记录 · {} 秒\nTimer saved · {} seconds", result->duration_seconds,
+                          result->duration_seconds);
+     }
+     // 苹果日历日程插入：窗口空闲且日历已安装时执行；备注带 [Stacks2] 去重标记。
+     if (command == "calendar-create" && parts.size() == 2) {
+       const auto task = TaskManager::get_task(TaskManager::TaskId(parts[1]), context.databases);
+       if (!task) {
+         return task_error(task.error());
+       }
+       std::string notes = task->description;
+       if (!notes.empty()) {
+         notes += "\n";
+       }
+       notes += "[Stacks2]" + task->id;
+       const auto created = calendar_insert_event(context, task->title, notes);
+       if (!created) {
+         return std::unexpected(created.error());
+       }
+       return std::format("已在苹果日历创建日程 · {}\nCalendar event created · {}", task->title,
+                          task->title);
+     }
+     if (command == "archive" && parts.size() == 2) {
+       const auto result = TaskManager::archive_task(TaskManager::TaskId(parts[1]), context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return "任务已归档\nTask archived";
+     }
+   
+     // Alfred 第二次回车才发送 delete-confirm，第一次 delete 仅显示说明页。
+     if (command == "delete-confirm" && parts.size() == 2) {
+       const auto result = TaskManager::delete_task(TaskManager::TaskId(parts[1]), context.databases);
+       if (!result) {
+         return task_error(result.error());
+       }
+       return std::format("任务已移到 {}\nTask moved to {}", result->trash_file.filename().string(),
+                          result->trash_file.filename().string());
+     }
+   
+     // 单任务/本周同步共用 sync_single；批量模式收集失败明细后整体返回错误。
+     if (command == "sync" && parts.size() == 3) {
+       const auto provider = parse_provider(parts[2]);
+       if (!provider) {
+         return std::unexpected("unknown sync provider");
+       }
+       return sync_single(context, parts[1], *provider);
+     }
+     if (command == "sync-week" && parts.size() == 2) {
+       const auto provider = parse_provider(parts[1]);
+       if (!provider) {
+         return std::unexpected("unknown sync provider");
+       }
+       if (!provider_available(*provider)) {
+         return std::unexpected("同步目标应用未安装 / Sync target app is not installed");
+       }
+       const auto tasks = TaskManager::list_week_due(context.databases);
+       if (!tasks) {
+         return task_error(tasks.error());
+       }
+       std::size_t succeeded = 0;
+       std::vector<std::string> failures;
+       for (const auto& task : *tasks) {
+         const auto result = sync_single(context, task.id, *provider);
+         if (result) {
+           ++succeeded;
+         } else {
+           failures.push_back(std::format("{}: {}", task.id, result.error()));
+         }
+       }
+       if (!failures.empty()) {
+         return std::unexpected(
+             std::format("{} 个成功，{} 个失败：{}", succeeded, failures.size(), failures.front()));
+       }
+       return std::format("本周 {} 个截止任务已同步到 {}\n{} due tasks synced to {}", succeeded,
+                          provider_label(*provider), succeeded, provider_label(*provider));
+     }
+   
+     // 路径操作走 ProjectSync，不经过 TaskManager，保持模块职责分离。
+     if (command == "add-path" && parts.size() == 2) {
+       const auto path = base64url_decode(parts[1]);
+       if (!path) {
+         return std::unexpected("invalid add-path payload");
+       }
+       const auto result =
+           ProjectSync::sync_all(*path, {context.databases.project_db, context.databases.stack_db});
+       if (!result) {
+         if (result.error() == ProjectSync::SyncError::workspace_invalid) {
+           const auto workspace = ProjectSync::inspect_workspace(*path);
+           return std::unexpected(std::format(
+               "无效 Stacks 工作区：{} · 缺失/类型错误：{}\n"
+               "Required: companies, documents.tree, people (files); tasks, timeboxes (directories)",
+               *path, missing_entries_text(workspace.missing_entries)));
+         }
+         return std::unexpected(std::string(ProjectSync::sync_error_message(result.error())));
+       }
+       return std::format("已添加路径 · {} 个项目 · {} 个清单\nPath added · {} projects · {} lists",
+                          result->project_count, result->stack_count, result->project_count,
+                          result->stack_count);
+     }
+     if (command == "reload-all" && parts.size() == 1) {
+       const auto result =
+           ProjectSync::sync_all("", {context.databases.project_db, context.databases.stack_db});
+       if (!result) {
+         return std::unexpected(std::string(ProjectSync::sync_error_message(result.error())));
+       }
+       return std::format(
+           "已重载全部路径 · {} 个项目 · {} 个清单\nAll paths reloaded · {} projects · {} lists",
+           result->project_count, result->stack_count, result->project_count, result->stack_count);
+     }
+     if (command == "remove-path-confirm" && parts.size() == 2) {
+       const auto workspace = resolve_workspace(context, parts[1]);
+       if (!workspace) {
+         return std::unexpected("工作区句柄已失效 / Workspace handle is invalid");
+       }
+       const auto result = ProjectSync::remove_workspace_index(
+           *workspace,
+           {context.databases.project_db, context.databases.stack_db, context.databases.timer_db,
+            context.databases.timer_db.parent_path() / ".stacks-tools.lock"});
+       if (!result) {
+         return std::unexpected(std::string(ProjectSync::sync_error_message(result.error())));
+       }
+   
+       // 清理只在移除工作区内有效的短句柄；业务 JSON 已由 ProjectSync 事务移除。
+       json state = load_ui_state(context);
+       for (const std::string_view kind : {"workspace", "inbox"}) {
+         if (!state["handles"].contains(std::string(kind)) ||
+             !state["handles"][std::string(kind)].is_object()) {
+           continue;
+         }
+         auto& values = state["handles"][std::string(kind)];
+         for (auto iterator = values.begin(); iterator != values.end();) {
+           bool remove = false;
+           if (iterator.value().is_string()) {
+             const fs::path value = normalized_ui_path(iterator.value().get<std::string>());
+             remove = value == *workspace;
+           }
+           iterator = remove ? values.erase(iterator) : std::next(iterator);
+         }
+       }
+       // 被移除的工作区若正是默认收件箱，同时清除默认值，避免列表继续引用失效路径。
+       if (default_inbox_path(context) == *workspace) {
+         state.erase("default_inbox");
+       }
+       static_cast<void>(save_ui_state(context, state));
+   
+       return std::format(
+           "已移除路径索引，工作区文件未删除 · {}\n"
+           "索引移除：library_paths={} project_nodes={} stack_nodes={} timers={}\n"
+           "Indexes removed; filesystem untouched · {}",
+           workspace->string(), result->library_paths_removed, result->project_nodes_removed,
+           result->stack_nodes_removed, result->timers_removed, workspace->string());
+     }
+     return std::unexpected(
+         "操作条目已失效，请按 Esc 后重新输入 s / This action is stale; reopen s and retry");
+   }
+   
+   }  // namespace
+   
+   std::string base64url_encode(std::string_view value) {
+     // 6-bit 分组累积；`-_` 替换标准 `+/`，且省略 padding，适合 Alfred token。
+     static constexpr std::string_view alphabet =
+         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+     std::string output;
+     output.reserve((value.size() * 4 + 2) / 3);
+     std::uint32_t buffer = 0;
+     int bits = 0;
+     for (const char raw_character : value) {
+       const auto character = static_cast<unsigned char>(raw_character);
+       buffer = (buffer << 8U) | character;
+       bits += 8;
+       while (bits >= 6) {
+         bits -= 6;
+         output.push_back(alphabet[(buffer >> bits) & 0x3FU]);
+       }
+     }
+     if (bits > 0) {
+       output.push_back(alphabet[(buffer << (6 - bits)) & 0x3FU]);
+     }
+     return output;
+   }
+   
+   std::optional<std::string> base64url_decode(std::string_view value) {
+     // 解码前严格拒绝 alphabet 外字符；不包含 padding，因此无需宽容跳过。
+     static constexpr std::string_view alphabet =
+         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+     std::string output;
+     output.reserve(value.size() * 3 / 4);
+     std::uint32_t buffer = 0;
+     int bits = 0;
+     for (const char character : value) {
+       const std::size_t index = alphabet.find(character);
+       if (index == std::string_view::npos) {
+         return std::nullopt;
+       }
+       buffer = (buffer << 6U) | static_cast<std::uint32_t>(index);
+       bits += 6;
+       if (bits >= 8) {
+         bits -= 8;
+         output.push_back(static_cast<char>((buffer >> bits) & 0xFFU));
+       }
+     }
+     return output;
+   }
+   
+   std::string filter_impl(const Context& context, std::string_view raw_query) {
+     // filter 是纯表现层：所有分支只调用领域模块并组装 JSON，不直接写文件。
+     const std::string query = trim(std::string(raw_query));
+     json items = json::array();
+   
+     try {
+       const CommandAliases aliases;
+       // 判定 `s` 后的首词/前缀是否属于已知命令；未知触发词进入聚合创建流程。
+       const auto is_known_query = [&](std::string_view query) {
+         const std::string first_word = trim(std::string(query.substr(0, query.find(' '))));
+         const std::array<std::string_view, 26> known_words = {
+             "add",
+             "add-path",
+             "a",
+             "boards",
+             "b",
+             "board",
+             "tasks",
+             "week",
+             "timers",
+             "inbox",
+             "config",
+             "cf",
+             "di",
+             "default-inbox",
+             "pin",
+             "reload",
+             "reload-all",
+             aliases.add_path,
+             aliases.reload,
+             aliases.config,
+             aliases.view,
+             aliases.tasks,
+             aliases.week,
+             aliases.timers,
+             aliases.inbox,
+             aliases.default_inbox,
+         };
+         if (std::ranges::find(known_words, first_word) != known_words.end()) {
+           return true;
+         }
+         for (const std::string_view prefix : {"board:",
+                                               "add:",
+                                               "task:",
+                                               "inbox:",
+                                               "inbox-workspace:",
+                                               "inbox-create:",
+                                               "remove-path:",
+                                               "rename:",
+                                               "desc:",
+                                               "due:",
+                                               "start:",
+                                               "priority:",
+                                               "schedule:",
+                                               "timer:",
+                                               "delete:",
+                                               "default-inbox:",
+                                               "pin:",
+                                               "choose-target:",
+                                               "choose-create:",
+                                               "create-preview:",
+                                               "create:",
+                                               "create-inbox:",
+                                               "sync:",
+                                               "timer-start:",
+                                               "timer-stop:"}) {
+           if (query.starts_with(prefix)) {
+             return true;
+           }
+         }
+         return false;
+       };
+   
+       // 空查询：第一行是所有操作说明，后面是可选命令和项目/清单三级入口。
+       if (query.empty()) {
+         const json help_item = item(
+             "所有可用操作",
+             bilingual(
+                 std::format("{} 添加路径 · {} 重载 · {} 查看 · {} 搜索 · {} 本周 · {} 计时 · {} "
+                             "收件箱 · {} 默认收件箱 · {} 固定 · {} 配置",
+                             aliases.add_path, aliases.reload, aliases.view, aliases.tasks,
+                             aliases.week, aliases.timers, aliases.inbox, aliases.default_inbox,
+                             aliases.pin, aliases.config),
+                 std::format("{} add path · {} reload · {} view · {} search · {} week · {} timers · "
+                             "{} inbox · {} default inbox · {} pin · {} config",
+                             aliases.add_path, aliases.reload, aliases.view, aliases.tasks,
+                             aliases.week, aliases.timers, aliases.inbox, aliases.default_inbox,
+                             aliases.pin, aliases.config)),
+             "", "", false, icon_note());
+         items.push_back(
+             item("添加路径",
+                  bilingual(
+                      std::format("add-path · {} — 选择新目录并加入索引", aliases.add_path),
+                      std::format("add-path · {} — choose and index a new library", aliases.add_path)),
+                  "", aliases.add_path + " ", false, icon_path(context)));
+         items.push_back(
+             item("重载全部路径",
+                  bilingual(std::format("reload · {} — 重新扫描所有已保存路径", aliases.reload),
+                            std::format("reload · {} — rescan all saved libraries", aliases.reload)),
+                  "", aliases.reload, false, icon_path(context)));
+         items.push_back(
+             item("查看项目 / 清单任务",
+                  bilingual(std::format("view · {} — 项目级 → 清单级 → 任务级", aliases.view),
+                            std::format("view · {} — project → list → task", aliases.view)),
+                  "", aliases.view + " ", false, icon_path(context)));
+         items.push_back(item(
+             "全局搜索任务",
+             bilingual(
+                 std::format("tasks · {} — 搜索全部工作区、项目和清单", aliases.tasks),
+                 std::format("tasks · {} — search every library, project and list", aliases.tasks)),
+             "", aliases.tasks + " ", false, icon_path(context)));
+         items.push_back(item(
+             "本周截止任务",
+             bilingual(std::format("week · {} — 聚合全部路径", aliases.week),
+                       std::format("week · {} — due this week across all libraries", aliases.week)),
+             "", aliases.week, false, icon_path(context)));
+         items.push_back(item(
+             "运行中的计时",
+             bilingual(std::format("timers · {} — 查看或停止计时", aliases.timers),
+                       std::format("timers · {} — inspect or stop running timers", aliases.timers)),
+             "", aliases.timers, false, icon_path(context)));
+         items.push_back(item(
+             "添加到收件箱",
+             bilingual(std::format("inbox · {} — 先选择路径，默认第一个", aliases.inbox),
+                       std::format("inbox · {} — choose a library; first is default", aliases.inbox)),
+             "", aliases.inbox + " ", false, icon_path(context)));
+         items.push_back(
+             item("设置默认收件箱",
+                  bilingual(std::format("default-inbox · {} — 指定唯一默认收件箱，⭐ 标识",
+                                        aliases.default_inbox),
+                            std::format("default-inbox · {} — set the single default Inbox, marked ⭐",
+                                        aliases.default_inbox)),
+                  "", aliases.default_inbox, false, icon_inbox()));
+         items.push_back(item(
+             "固定常用项目 / 看板",
+             bilingual(
+                 std::format("pin · {} — 固定后优先显示，📌 标识", aliases.pin),
+                 std::format("pin · {} — pinned boards are listed first, marked 📌", aliases.pin)),
+             "", aliases.pin, false, icon_stack()));
+         items.push_back(
+             item("路径配置",
+                  bilingual(std::format("config · {} — 查看已保存路径", aliases.config),
+                            std::format("config · {} — inspect saved library paths", aliases.config)),
+                  "", aliases.config, false, icon_path(context)));
+         const auto boards = TaskManager::list_boards(context.databases);
+         if (!boards) {
+           items.push_back(error_item(std::string(TaskManager::task_error_message(boards.error()))));
+           return feedback(items);
+         }
+         const json board_rows = board_items(context, *boards, "", true);
+         for (const auto& board : board_rows) {
+           items.push_back(board);
+         }
+         items.push_back(help_item);
+         return feedback(items);
+       }
+   
+       // 默认收件箱：列出全部工作区，⭐ 标记当前默认；回车进入设置确认。
+       if (query == "default-inbox" || query == "di" || query == aliases.default_inbox) {
+         return feedback(default_inbox_items(context));
+       }
+       if (query.starts_with("default-inbox:")) {
+         return feedback(default_inbox_confirm_items(context, trim(query.substr(14))));
+       }
+   
+       // 固定项目/看板：回车进入固定/取消固定确认；标题自带 📌 不参与状态判定。
+       if (query == "pin" || query.starts_with("pin ")) {
+         const std::string pin_query = query == "pin" ? "" : trim(query.substr(4));
+         return feedback(pin_items(context, pin_query));
+       }
+       if (query.starts_with("pin:")) {
+         return feedback(pin_confirm_items(context, trim(query.substr(4))));
+       }
+   
+       // 非法触发词聚合创建：六行面板回车后选择 ⭐默认收件箱 / 📌固定项目看板。
+       if (query.starts_with("choose-target:")) {
+         return feedback(choose_target_items(context, query.substr(14)));
+       }
+   
+       // 路径操作只返回一个可执行条目，避免 Alfred 对 action token 二次猜测。
+       if (query == "reload-all") {
+         return feedback(json::array({item("重载全部路径",
+                                           bilingual("reload · rl — 重新扫描所有已保存路径",
+                                                     "reload · rl — rescan all saved libraries"),
+                                           "reload-all", "", true, icon_path(context))}));
+       }
+   
+       if (query == "add-path") {
+         return feedback(json::array({item("添加新路径",
+                                           bilingual("add-path · ap — 选择目录并加入索引",
+                                                     "add-path · ap — choose a folder and add it"),
+                                           "add-path", "", true, icon_path(context))}));
+       }
+   
+       // 同时接受别名原始输入和 canonical 名称，修复 `s cf` 直接路由不到配置页的问题。
+       if (query == "config" || query == "cf" || query == aliases.config) {
+         return feedback(config_items(context));
+       }
+   
+       // 路径条目回车后先进入确认页；确认动作只清索引，不删除工作区文件。
+       if (query.starts_with("remove-path:")) {
+         const auto path = resolve_workspace(context, trim(query.substr(12)));
+         if (!path) {
+           return feedback(
+               json::array({error_item("工作区句柄已失效", "Workspace handle is invalid")}));
+         }
+         const auto status = ProjectSync::inspect_workspace(*path);
+         items.push_back(item(
+             std::format("确认移除路径索引？｜{}", path->filename().string()),
+             bilingual(
+                 std::format("{} · {} · 仅从 Project/Stack/Timers 索引移除；不会删除目录或任务文件",
+                             path->string(), status.structure_valid ? "当前有效" : "当前无效"),
+                 "Remove this path from three plugin indexes only; workspace files are untouched"),
+             "", "", false, icon_info()));
+         const std::string short_handle = workspace_handle(context, *path);
+         items.push_back(
+             item("是，确认移除索引 / Remove indexes",
+                  bilingual("再次回车执行；Alfred 插件中不再检索该路径",
+                            "Press Enter again; this path disappears from Project/Stack/Timers"),
+                  std::format("remove-path-confirm:{}", short_handle), "", true,
+                  system_icon("ToolbarDeleteIcon.icns")));
+         items.push_back(item("否，返回路径列表 / Back", bilingual("不修改任何索引", "Cancel removal"),
+                              "", "config", false, icon_note()));
+         return feedback(items);
+       }
+   
+       // 兼容 `add`/`board`：`add` 用于快速创建，`board` 用于三级浏览入口。
+       if (query == "add" || query == "board" || query.starts_with("board ")) {
+         const auto boards = TaskManager::list_boards(context.databases);
+         if (!boards) {
+           return feedback(json::array(
+               {error_item(std::string(TaskManager::task_error_message(boards.error())))}));
+         }
+         json help_item;
+         if (query == "board" || query.starts_with("board ")) {
+           help_item = item(
+               "查看与编辑 / View and edit",
+               bilingual(
+                   "输入关键词模糊匹配项目或清单，回车进入下一级；任务详情内可返回上一级",
+                   "Fuzzy-match projects or lists, press Enter to drill down, and use Back inside"),
+               "", "", false, icon_note());
+         }
+         const std::string board_query = query.starts_with("board ") ? trim(query.substr(6)) : "";
+         const json board_rows = board_items(context, *boards, board_query, query == "add");
+         for (const auto& board : board_rows) {
+           items.push_back(board);
+         }
+         if (!help_item.is_null()) {
+           items.push_back(help_item);
+         }
+         return feedback(items);
+       }
+   
+       // `add:<target> 五字段输入`：单输入框实时回显，最后一行回车创建。
+       if (query.starts_with("add:")) {
+         const auto [target_token, payload] = split_first(query.substr(4), ' ');
+         const auto target = resolve_handle(context, "board", target_token);
+         if (!target) {
+           return feedback(
+               json::array({error_item("项目/清单句柄已失效", "Board handle is invalid")}));
+         }
+         const auto boards = TaskManager::list_boards(context.databases);
+         if (!boards) {
+           return feedback(json::array(
+               {error_item(std::string(TaskManager::task_error_message(boards.error())))}));
+         }
+         const auto board = std::ranges::find_if(
+             *boards,
+             [&target](const TaskManager::BoardTarget& value) { return value.id == *target; });
+         if (board == boards->end()) {
+           return feedback(json::array({error_item("找不到目标项目/清单", "Board not found")}));
+         }
+         const std::string label =
+             board->kind == "project"
+                 ? std::format("项目 {}", board->title)
+                 : std::format("项目 {} → 清单 {}", board->project_title, board->title);
+         const std::string short_target = remember_handle(context, "board", board->id);
+         return feedback(
+             creation_form_items("board", short_target, label, strip_input_sentinel(payload)));
+       }
+   
+       // Inbox 第一层列出已保存工作区，并直接显示结构有效性。
+       if (query == "inbox") {
+         const auto workspaces =
+             ProjectSync::list_workspaces({context.databases.project_db, context.databases.stack_db});
+         if (!workspaces) {
+           return feedback(json::array(
+               {error_item(std::string(ProjectSync::sync_error_message(workspaces.error())))}));
+         }
+         if (workspaces->empty()) {
+           return feedback(
+               json::array({item("收件箱｜没有已保存路径",
+                                 bilingual("先执行 s ap 添加路径", "Run s ap to add a library first"),
+                                 "", "", false, icon_inbox())}));
+         }
+         for (std::size_t index = 0; index < workspaces->size(); ++index) {
+           const auto& workspace = (*workspaces)[index];
+           const std::string short_handle = workspace_handle(context, workspace.path);
+           const bool valid = workspace.structure_valid;
+           items.push_back(
+               item(std::format("收件箱路径｜{}{}", workspace.path.filename().string(),
+                                index == 0 ? "（默认）" : ""),
+                    bilingual(std::format("{} · {}{}", workspace.path.string(),
+                                          valid ? "结构有效" : "结构无效，请先修复或从 s cf 移除",
+                                          index == 0 ? " · 默认第一个路径" : ""),
+                              valid ? "Valid workspace · press Enter to open its Inbox"
+                                    : "Invalid workspace · repair it or remove its index from s cf"),
+                    "", valid ? handle_query("inbox", short_handle) : "", false,
+                    valid ? icon_inbox() : icon_info()));
+         }
+         items.push_back(
+             item("收件箱工作区说明 / Inbox workspace",
+                  bilingual("回车查看任务；输入关键词模糊搜索，无命中自动进入六行创建面板",
+                            "Press Enter to view tasks; fuzzy-search by keyword, no match opens "
+                            "the create panel"),
+                  "", "", false, icon_info()));
+         items.push_back(item("← 返回总览 / Back", bilingual("返回命令总览", "Back to overview"), "",
+                              " ", false, icon_note()));
+         return feedback(items);
+       }
+   
+       // 新短句柄与旧 `inbox-workspace:` token 共用同一工作区页面。
+       if (query.starts_with("inbox:") || query.starts_with("inbox-workspace:")) {
+         const bool legacy = query.starts_with("inbox-workspace:");
+         const std::size_t prefix_size = legacy ? 16 : 6;
+         const auto [path_token, search] = split_first(query.substr(prefix_size), ' ');
+         const auto path = resolve_workspace(context, path_token);
+         if (!path) {
+           return feedback(json::array({error_item("收件箱路径无效", "Invalid Inbox library path")}));
+         }
+         return feedback(inbox_workspace_items(context, *path, search));
+       }
+   
+       // 旧版 inbox-create 查询只用于兼容；新流程直接进入单输入框五字段面板。
+       if (query.starts_with("inbox-create:")) {
+         const auto [path_token, payload] = split_first(query.substr(13), ' ');
+         const auto path = resolve_workspace(context, path_token);
+         if (!path) {
+           return feedback(json::array({error_item("收件箱路径无效", "Invalid Inbox library path")}));
+         }
+         const std::string short_target = workspace_handle(context, *path);
+         return feedback(creation_form_items("inbox", short_target,
+                                             std::format("工作区 {}", path->filename().string()),
+                                             strip_input_sentinel(payload)));
+       }
+   
+       // 用户看到 `s i xxx` 时先阻止直接录入，确保工作区选择具有明确语义。
+       if (query.starts_with("inbox ")) {
+         return feedback(
+             json::array({item("收件箱｜请先选择工作区 / Inbox",
+                               bilingual("请先选择工作区，再直接搜索或新建收件箱任务",
+                                         "Select a library first, then search or create Inbox tasks"),
+                               "", "inbox", false, icon_inbox())}));
+       }
+   
+       // 全局任务搜索覆盖所有工作区，不使用 board target 过滤。
+       if (query == "tasks") {
+         TaskManager::TaskListOptions options;
+         apply_task_visibility(options);
+         const auto tasks = TaskManager::list_tasks(context.databases, options);
+         if (!tasks) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(tasks.error())))}));
+         }
+         json rows = task_items(context, *tasks);
+         rows.push_back(item("全局任务搜索",
+                             bilingual("范围：全部工作区 → 全部项目 → 全部清单",
+                                       "Scope: every library → every project → every list"),
+                             "", "", false, icon_note()));
+         return feedback(rows);
+       }
+       if (query.starts_with("tasks ")) {
+         TaskManager::TaskListOptions options;
+         options.query = trim(query.substr(6));
+         apply_task_visibility(options);
+         const auto tasks = TaskManager::list_tasks(context.databases, options);
+         if (!tasks) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(tasks.error())))}));
+         }
+         json rows = task_items(context, *tasks);
+         rows.push_back(item(std::format("全局任务搜索｜{}", trim(query.substr(6))),
+                             bilingual("范围：全部工作区 → 全部项目 → 全部清单",
+                                       "Scope: every library → every project → every list"),
+                             "", "", false, icon_note()));
+         return feedback(rows);
+       }
+   
+       // 项目/清单页：空输入查看任务；一旦输入参数，切换为六行实时创建面板。
+       if (query.starts_with("board:")) {
+         const auto [target_token, payload] = split_first(query.substr(6), ' ');
+         const auto target = resolve_handle(context, "board", target_token);
+         if (!target) {
+           return feedback(
+               json::array({error_item("项目/清单句柄已失效", "Board handle is invalid")}));
+         }
+         const auto boards = TaskManager::list_boards(context.databases);
+         if (!boards) {
+           return feedback(json::array(
+               {error_item(std::string(TaskManager::task_error_message(boards.error())))}));
+         }
+         const auto board = std::ranges::find_if(
+             *boards,
+             [&target](const TaskManager::BoardTarget& value) { return value.id == *target; });
+         if (board == boards->end()) {
+           return feedback(json::array({error_item("找不到目标项目/清单", "Board not found")}));
+         }
+   
+         const std::string label =
+             board->kind == "project"
+                 ? std::format("项目 {}", board->title)
+                 : std::format("项目 {} → 清单 {}", board->project_title, board->title);
+         const std::string short_target = remember_handle(context, "board", board->id);
+         const std::string payload_text = strip_input_sentinel(payload);
+         if (!payload_text.empty()) {
+           return feedback(creation_form_items("board", short_target, label, payload_text));
+         }
+   
+         TaskManager::TaskListOptions options;
+         options.target = TaskManager::TargetId(*target);
+         apply_task_visibility(options);
+         const auto tasks = TaskManager::list_tasks(context.databases, options);
+         if (!tasks) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(tasks.error())))}));
+         }
+         if (!tasks->empty()) {
+           const json task_rows = task_items(context, *tasks);
+           for (const auto& task : task_rows) {
+             items.push_back(task);
+           }
+         } else {
+           items.push_back(item("当前项目 / 清单没有任务",
+                                bilingual("在输入框输入五字段参数即可新建任务",
+                                          "Type pipe-separated task fields to create a task"),
+                                "", "", false, icon_task()));
+         }
+   
+         items.push_back(
+             item("新建任务输入格式 / Create task",
+                  bilingual("在输入框输入：标题|描述|开始|截止|优先级；|/｜可混用，无需切换输入法",
+                            "Type title|description|start|due|priority in the Alfred query field"),
+                  "", "", false, icon_note()));
+         items.push_back(item("← 返回上一级 / Back",
+                              bilingual("返回项目与清单列表", "Back to project/list selection"), "",
+                              "board ", false, icon_note()));
+         return feedback(items);
+       }
+   
+       // 本周页第一项为批量同步 action，随后是本周边界说明和任务列表。
+       if (query == "week") {
+         const auto tasks = TaskManager::list_week_due(context.databases);
+         if (!tasks) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(tasks.error())))}));
+         }
+         const auto bounds = TaskManager::week_bounds();
+         json due_items = task_items(context, *tasks);
+         due_items.insert(due_items.begin(),
+                          item("同步本周到提醒 + OmniFocus",
+                               bilingual("任务必须已有截止日期", "Tasks must already have due dates"),
+                               "sync-week:both", "", true, icon_sync()));
+         due_items.push_back(item(
+             "本周截止任务",
+             bilingual(std::format("{} → {} · {} 项", bounds.first, bounds.last, tasks->size()),
+                       std::format("{} → {} · {} tasks", bounds.first, bounds.last, tasks->size())),
+             "", "", false, icon_note()));
+         return feedback(due_items);
+       }
+   
+       // 计时页每一项回车即停止并写入 timelog；空列表给出操作说明。
+       if (query == "timers") {
+         const auto timers = TaskManager::list_timers(context.databases);
+         if (!timers) {
+           return feedback(json::array(
+               {error_item(std::string(TaskManager::task_error_message(timers.error())))}));
+         }
+         json timer_items = json::array();
+         for (const auto& timer : *timers) {
+           const std::string task_handle = remember_handle(context, "task", timer.task_id);
+           timer_items.push_back(
+               item(std::format("▶ {}", timer.title),
+                    bilingual(std::format("开始于 {} · task:{}", timer.started_at, task_handle),
+                              std::format("started {} · task:{}", timer.started_at, task_handle)),
+                    std::format("timer-stop:{}", timer.task_id), "", true, icon_timer()));
+         }
+         if (timer_items.empty()) {
+           timer_items.push_back(
+               item("没有运行中的计时",
+                    bilingual("从任务详情页启动计时", "Start a timer from a task detail page"), "", "",
+                    false, icon_timer()));
+         }
+         return feedback(timer_items);
+       }
+   
+       // 任务详情页集中提供编辑、日期、完成、计时、同步、归档和删除入口。
+       if (query.starts_with("task:")) {
+         const std::string token = trim(query.substr(5));
+         const auto resolved = resolve_handle(context, "task", token);
+         if (!resolved) {
+           return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
+         }
+         const std::string task_handle = remember_handle(context, "task", *resolved);
+         const auto task = TaskManager::get_task(TaskManager::TaskId(*resolved), context.databases);
+         if (!task) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(task.error())))}));
+         }
+         return task_detail(context, *task, task_handle);
+       }
+   
+       // 单字段编辑：第一行显示原值，第二行显示待更新值；回车应用更改。
+       for (const std::string_view command : {"rename:", "desc:", "due:", "start:", "priority:"}) {
+         if (!query.starts_with(command)) {
+           continue;
+         }
+         const std::string remainder = query.substr(command.size());
+         const auto [id_token, raw_payload] = split_first(remainder, ' ');
+         const std::string payload = strip_input_sentinel(raw_payload);
+         const auto resolved_id = resolve_handle(context, "task", id_token);
+         if (!resolved_id) {
+           return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
+         }
+         const std::string task_handle = remember_handle(context, "task", *resolved_id);
+         const auto task = TaskManager::get_task(TaskManager::TaskId(*resolved_id), context.databases);
+         if (!task) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(task.error())))}));
+         }
+         const std::string label = command == "rename:"  ? "原标题"
+                                   : command == "desc:"  ? "原描述"
+                                   : command == "due:"   ? "原截止日期"
+                                   : command == "start:" ? "原开始日期"
+                                                         : "原优先级";
+         const std::string english_label = command == "rename:"  ? "Current title"
+                                           : command == "desc:"  ? "Current description"
+                                           : command == "due:"   ? "Current due date"
+                                           : command == "start:" ? "Current start date"
+                                                                 : "Current priority";
+         const std::string current =
+             command == "rename:" ? task->title
+             : command == "desc:" ? (task->description.empty() ? "（空）" : task->description)
+             : command == "due:"  ? (task->due_date.empty() ? "（未设置）" : task->due_date)
+             : command == "start:"
+                 ? (task->start_date.empty() ? "（未设置）" : task->start_date)
+                 : (task->priority.empty() ? "（未设置）" : priority_label(task->priority));
+         const std::string new_label = command == "rename:"  ? "新标题"
+                                       : command == "desc:"  ? "新描述"
+                                       : command == "due:"   ? "新截止日期"
+                                       : command == "start:" ? "新开始日期"
+                                                             : "新优先级";
+         json rows = json::array();
+         if (trim(payload).empty()) {
+           rows.push_back(
+               item(std::format("{}：（继续输入）", new_label),
+                    bilingual(command == "priority:"
+                                  ? "可选：low/低、medium/中、high/高、critical/紧急"
+                                  : "日期可用 today、tomorrow、+3d、monday 或 YYYY-MM-DD",
+                              command == "priority:" ? "Type low, medium, high or critical"
+                                                     : "Type the new value, then press Enter"),
+                    "", std::format("{}{} {} ", command, task_handle, handle_sentinel_from_env()),
+                    false, icon_info()));
+         } else {
+           const std::string action_prefix(command.substr(0, command.size() - 1));
+           rows.push_back(item(
+               std::format("{}：{}", new_label, one_line(trim(payload))),
+               bilingual(std::format("回车应用更改 · 任务 {}", task_handle),
+                         std::format("Press Enter to apply · Task {}", task_handle)),
+               std::format("{}:{}:{}", action_prefix, *resolved_id, base64url_encode(trim(payload))),
+               "", true, icon_task()));
+         }
+         // 第一行永远是“新值”，保证选中后回车直接执行更新；原值仅作第二行参考。
+         rows.push_back(
+             item(std::format("{}：{}", label, current),
+                  bilingual(std::format("{} · 参考原值直接重新输入，无需复制粘贴", english_label),
+                            "Reference row; retype the value without copy-paste"),
+                  "", "", false, icon_note()));
+         rows.push_back(item("← 返回任务详情 / Back",
+                             bilingual("不修改此字段", "Return without changing this field"), "",
+                             std::format("task:{} {}", task_handle, handle_sentinel_from_env()), false,
+                             icon_note()));
+         return feedback(rows);
+       }
+   
+       // 开始/截止区间必须一次输入两端，后端统一校验先后关系。
+       if (query.starts_with("schedule:")) {
+         const std::string remainder = query.substr(9);
+         const auto [id_token, raw_payload] = split_first(remainder, ' ');
+         const std::string payload = strip_input_sentinel(raw_payload);
+         const auto resolved_id = resolve_handle(context, "task", id_token);
+         if (!resolved_id) {
+           return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
+         }
+         const std::string task_handle = remember_handle(context, "task", *resolved_id);
+         const auto [start, due] = split_first(payload, '|');
+         if (trim(start).empty() || trim(due).empty()) {
+           return feedback(
+               json::array({error_item("格式：开始日期|截止日期", "Format: start-date|due-date")}));
+         }
+         return feedback(json::array(
+             {item(std::format("三级：任务｜应用计划：{} → {}", trim(start), trim(due)),
+                   bilingual(std::format("任务 {}", task_handle), std::format("Task {}", task_handle)),
+                   std::format("schedule:{}:{}:{}", *resolved_id, base64url_encode(trim(start)),
+                               base64url_encode(trim(due))),
+                   "", true, icon_week())}));
+       }
+   
+       // timer 查询保留为详情页快捷入口；与 timers 总列表职责不同。
+       if (query.starts_with("timer:")) {
+         const std::string token = trim(query.substr(6));
+         const auto resolved = resolve_handle(context, "task", token);
+         if (!resolved) {
+           return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
+         }
+         const std::string task_handle = remember_handle(context, "task", *resolved);
+         const auto task = TaskManager::get_task(TaskManager::TaskId(*resolved), context.databases);
+         if (!task) {
+           return feedback(
+               json::array({error_item(std::string(TaskManager::task_error_message(task.error())))}));
+         }
+         return feedback(json::array({
+             item("启动计时", bilingual(task->title, "Start timing this task"),
+                  std::format("timer-start:{}", *resolved), "", true, icon_timer()),
+             item("停止并写入 timelog", bilingual(task->title, "Stop and write a timelog"),
+                  std::format("timer-stop:{}", *resolved), "", true, icon_timer()),
+         }));
+       }
+   
+       // 删除采用二次确认，真正删除前不发送破坏性 action。
+       if (query.starts_with("delete:")) {
+         const std::string token = trim(query.substr(7));
+         const auto resolved = resolve_handle(context, "task", token);
+         if (!resolved) {
+           return feedback(json::array({error_item("任务主键已失效", "Task handle is invalid")}));
+         }
+         const std::string task_handle = remember_handle(context, "task", *resolved);
+         return feedback(json::array({item(
+             "确认移到可恢复垃圾箱？",
+             bilingual("再次回车执行；任务文件移入 tasks/.trash，并从清单移除",
+                       "Press Enter again; move the task to tasks/.trash and remove it from lists"),
+             std::format("delete-confirm:{}", *resolved), std::format("delete:{} ✅ ", task_handle),
+             false, system_icon("ToolbarDeleteIcon.icns"))}));
+       }
+   
+       // 非命令触发词：先显示六行创建面板，回车后再选 ⭐默认收件箱 / 📌固定项目看板。
+       if (!is_known_query(query)) {
+         return feedback(choose_target_form_items(query));
+       }
+   
+       return feedback(json::array({error_item(
+           "没有匹配的命令", "按 Esc 回到 s 总览；可用 ap、rl、v、t、w、tm、i、di、pin、cf")}));
+     } catch (const std::exception& error) {
+       // UI 适配层最后一道异常边界；任何异常转换为可选错误条目而非崩溃 Alfred。
+       return feedback(
+           json::array({error_item("界面数据处理失败", std::format("UI error: {}", error.what()))}));
+     }
+   }
+   
+   std::string filter(const Context& context, std::string_view raw_query) {
+     // 包装 impl 以统一记录 query、输出字节数和 item 数量。
+     const std::string output = filter_impl(context, raw_query);
+     int item_count = -1;
+     try {
+       const auto parsed = json::parse(output);
+       if (parsed.contains("items") && parsed["items"].is_array()) {
+         item_count = static_cast<int>(parsed["items"].size());
+       }
+     } catch (const std::exception&) {
+     }
+     interface_log::record(
+         interface_log::ApiName("WorkflowUI::filter"),
+         interface_log::LogText(std::format("query={}", raw_query)),
+         interface_log::LogText(std::format("bytes={} items={}", output.size(), item_count)),
+         item_count >= 0 ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+     return output;
+   }
+   
+   std::expected<std::string, std::string> action(const Context& context, std::string_view token) {
+     // action 层只负责日志边界；业务错误文本由 dispatch_action 生成。
+     auto result = dispatch_action(context, token);
+     interface_log::record(interface_log::ApiName("WorkflowUI::action"),
+                           interface_log::LogText(std::string(token)),
+                           interface_log::LogText(result ? *result : result.error()),
+                           result ? interface_log::ApiStatus::ok : interface_log::ApiStatus::failed);
+     return result;
+   }
+   
+   }  // namespace WorkflowUI

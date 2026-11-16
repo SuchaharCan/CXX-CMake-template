@@ -27,12 +27,11 @@ module;
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include "json.hpp"
 
 export module WorkflowUI;
 

@@ -28,13 +28,12 @@ module;
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
-
-#include "json.hpp"
 
 export module ProjectSync;
 

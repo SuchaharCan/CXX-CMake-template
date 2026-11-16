@@ -1,0 +1,14 @@
+.. _exhale_enum_namespace_reminder_sync_1a189b8838430626c275c7533611707516:
+
+Enum SyncError
+==============
+
+- Defined in :ref:`file_modules_reminder_sync_include_ReminderSync.cppm`
+
+
+Enum Documentation
+------------------
+
+
+.. doxygenenum:: ReminderSync::SyncError
+   :project: OmniStacks

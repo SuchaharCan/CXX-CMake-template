@@ -1,0 +1,7 @@
+.. _page_index:
+
+Omni-Stacks 架构设计与接口文档
+=====================
+
+.. doxygenpage:: index
+   :project: OmniStacks
